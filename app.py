@@ -122,4 +122,3 @@ analitico = merged[[
 csv = analitico.to_csv(index=False).encode('utf-8')
 st.download_button("📤 Baixar relação analítica (.csv)", data=csv, file_name="relacao_analitica.csv", mime="text/csv")
 
-
