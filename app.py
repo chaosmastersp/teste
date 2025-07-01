@@ -14,12 +14,10 @@ if not st.session_state.autenticado:
     senha = st.text_input("Digite a senha de acesso:", type="password")
     if senha == senha_correta:
         st.session_state.autenticado = True
-        st.success("✅ Acesso autorizado. Recarregando...")
-        st.experimental_rerun()
-    elif senha != "":
-        st.error("❌ Senha incorreta.")
-        st.stop()
+        st.success("✅ Acesso autorizado.")
     else:
+        if senha != "":
+            st.error("❌ Senha incorreta.")
         st.stop()
 
 # ==== Navegação ====
@@ -167,6 +165,5 @@ elif menu == "Atualizar Bases":
         with open("Tombamento.xlsx", "wb") as f:
             f.write(tomb_file.getbuffer())
         st.success("✅ Bases atualizadas. Recarregue a página.")
-
 
 
