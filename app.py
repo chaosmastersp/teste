@@ -23,14 +23,25 @@ if not st.session_state.autenticado:
 st.sidebar.title("🔍 Navegação")
 menu = st.sidebar.radio("Ir para:", ["Consulta Individual", "Registros de Consulta Ativa", "Resumo", "Atualizar Bases"])
 
-# Inicialização do estado com as bases
-if "df" not in st.session_state or "tomb" not in st.session_state:
+
+# Verificar se as bases já foram salvas localmente
+if os.path.exists("NovoEmprestimo.xlsx") and os.path.exists("Tombamento.xlsx"):
+    df = pd.read_excel("NovoEmprestimo.xlsx")
+    tomb = pd.read_excel("Tombamento.xlsx")
+    st.session_state.df = df
+    st.session_state.tomb = tomb
+else:
     st.sidebar.warning("📂 Carregue as bases de dados para iniciar.")
     novo_file = st.sidebar.file_uploader("📄 NovoEmprestimo.xlsx", type="xlsx")
     tomb_file = st.sidebar.file_uploader("📄 Tombamento.xlsx", type="xlsx")
     if novo_file and tomb_file:
-        df = pd.read_excel(novo_file)
-        tomb = pd.read_excel(tomb_file)
+        with open("NovoEmprestimo.xlsx", "wb") as f:
+            f.write(novo_file.getbuffer())
+        with open("Tombamento.xlsx", "wb") as f:
+            f.write(tomb_file.getbuffer())
+
+        df = pd.read_excel("NovoEmprestimo.xlsx")
+        tomb = pd.read_excel("Tombamento.xlsx")
 
         df["Número CPF/CNPJ"] = df["Número CPF/CNPJ"].astype(str).str.replace(r"\D", "", regex=True).str.zfill(11)
         df["Número Contrato Crédito"] = df["Número Contrato Crédito"].astype(str)
@@ -42,6 +53,7 @@ if "df" not in st.session_state or "tomb" not in st.session_state:
         st.success("✅ Bases carregadas com sucesso.")
     else:
         st.stop()
+
 
 # Carregar bases do estado
 df = st.session_state.df
