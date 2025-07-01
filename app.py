@@ -69,6 +69,7 @@ if menu == "Consulta Individual":
     cpf_input = st.text_input("Digite o CPF (somente números):", max_chars=11)
     if cpf_input and len(cpf_input) == 11:
         if st.button("Consultar"):
+            st.session_state.cpf_em_analise = cpf_input
             df_filtrado = df[
                 (df["Número CPF/CNPJ"] == cpf_input) &
                 (df["Submodalidade Bacen"] == "CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.") &
@@ -165,5 +166,13 @@ elif menu == "Atualizar Bases":
         with open("Tombamento.xlsx", "wb") as f:
             f.write(tomb_file.getbuffer())
         st.success("✅ Bases atualizadas. Recarregue a página.")
+
+    if "cpf_em_analise" in st.session_state:
+        if st.session_state.cpf_em_analise not in st.session_state.cpfs_ativos:
+            if st.button("Marcar como Consulta Ativa"):
+                st.session_state.cpfs_ativos.append(st.session_state.cpf_em_analise)
+                with open(CPFS_ATIVOS_FILE, "w") as f:
+                    json.dump(st.session_state.cpfs_ativos, f)
+                st.success("✅ CPF marcado com sucesso.")
 
 
