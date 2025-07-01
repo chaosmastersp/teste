@@ -20,7 +20,7 @@ for key in ["autenticado", "arquivo_novo", "arquivo_tomb"]:
 
 def autenticar():
     senha = st.text_input("Digite a senha para acessar o sistema:", type="password")
-    if senha == "sua_senha_segura":
+    if senha == "tombamento":
         st.session_state.autenticado = True
         st.success("Acesso autorizado.")
     elif senha:
@@ -99,7 +99,7 @@ if menu == "Consulta Individual":
             (df['Número CPF/CNPJ'] == cpf_input) &
             (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
             (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
-            (~df['Código Linha Crédito'].isin([140073, 138358, 141011]))
+            (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 140073, 137510]))
         ]
 
         if filtrado.empty:
@@ -155,7 +155,7 @@ if menu == "Registros de Consulta Ativa":
                 (df['Número CPF/CNPJ'] == cpf) &
                 (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
                 (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
-                (~df['Código Linha Crédito'].isin([140073, 138358, 141011]))
+                (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 140073, 137510]))
             ]
             for _, row in registros.iterrows():
                 contrato = str(row['Número Contrato Crédito'])
