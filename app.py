@@ -112,7 +112,7 @@ resumo = merged.groupby(['CNPJ Empresa Consignante', 'Empresa Consignante']).agg
 st.dataframe(resumo)
 
     # Exportar relação analítica
-    st.markdown("### 📥 Exportar Relação Analítica")
+st.markdown("### 📥 Exportar Relação Analítica")
     merged['Consulta Ativa'] = merged['Consulta Ativa'].apply(lambda x: 'Sim' if x else 'Não')
     analitico = merged[[
         'Número CPF/CNPJ', 'Nome Cliente', 'Número Contrato Crédito', 'Quantidade Parcelas Abertas',
