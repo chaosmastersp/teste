@@ -109,7 +109,7 @@ resumo = merged.groupby(['CNPJ Empresa Consignante', 'Empresa Consignante']).agg
         Total_Consulta_Ativa=('Consulta Ativa', 'sum')
     ).reset_index()
 
-    st.dataframe(resumo)
+st.dataframe(resumo)
 
     # Exportar relação analítica
     st.markdown("### 📥 Exportar Relação Analítica")
