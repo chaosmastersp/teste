@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import os
@@ -20,7 +19,7 @@ for key in ["autenticado", "arquivo_novo", "arquivo_tomb"]:
 
 def autenticar():
     senha = st.text_input("Digite a senha para acessar o sistema:", type="password")
-    if senha == "sua_senha_segura":
+    if senha == "tombamento":
         st.session_state.autenticado = True
         st.success("Acesso autorizado.")
     elif senha:
@@ -88,6 +87,9 @@ df = st.session_state.novo_df
 tomb = st.session_state.tomb_df
 cpfs_ativos = carregar_cpfs_ativos()
 
+# Definindo a variável merged antes de usá-la
+merged = pd.merge(df, tomb, left_on='Número CPF/CNPJ', right_on='CPF Tomador', how='left')
+
 if menu == "Resumo":
     st.title("📊 Resumo por Empresa Consignante")
 
@@ -97,24 +99,25 @@ if menu == "Resumo":
         (~df['Código Linha Crédito'].isin([140073, 138358, 141011]))
     ]
     df_filtrado['Número Contrato Crédito'] = df_filtrado['Número Contrato Crédito'].astype(str)
-tomb['Número Contrato'] = tomb['Número Contrato'].astype(str)
+    tomb['Número Contrato'] = tomb['Número Contrato'].astype(str)
 
-resumo = merged.groupby(['CNPJ Empresa Consignante', 'Empresa Consignante']).agg(
+    resumo = merged.groupby(['CNPJ Empresa Consignante', 'Empresa Consignante']).agg(
         Total_Cooperados=('Número CPF/CNPJ', 'nunique'),
         Total_de_Contratos=('Número Contrato Crédito', 'count'),
         Total_Consulta_Ativa=('Consulta Ativa', 'sum')
     ).reset_index()
 
-st.dataframe(resumo)
+    st.dataframe(resumo)
 
     # Exportar relação analítica
-st.markdown("### 📥 Exportar Relação Analítica")
-merged['Consulta Ativa'] = merged['Consulta Ativa'].apply(lambda x: 'Sim' if x else 'Não')
-analitico = merged[[
+    st.markdown("### 📥 Exportar Relação Analítica")
+    merged['Consulta Ativa'] = merged['Consulta Ativa'].apply(lambda x: 'Sim' if x else 'Não')
+    analitico = merged[[
         'Número CPF/CNPJ', 'Nome Cliente', 'Número Contrato Crédito', 'Quantidade Parcelas Abertas',
         '% Taxa Operação', 'Código Linha Crédito', 'Nome Comercial',
         'CNPJ Empresa Consignante', 'Empresa Consignante', 'Consulta Ativa'
     ]]
-csv = analitico.to_csv(index=False).encode('utf-8')
-st.download_button("📤 Baixar relação analítica (.csv)", data=csv, file_name="relacao_analitica.csv", mime="text/csv")
+    csv = analitico.to_csv(index=False).encode('utf-8')
+    st.download_button("📤 Baixar relação analítica (.csv)", data=csv, file_name="relacao_analitica.csv", mime="text/csv")
+
 
