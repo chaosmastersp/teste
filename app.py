@@ -13,11 +13,12 @@ scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/au
 creds_dict = json.loads(st.secrets["gspread"]["json"])
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
-# Testar visibilidade das planilhas
-docs = client.openall()
-st.write("Planilhas visíveis pela conta de serviço:")
-for doc in docs:
-    st.write(doc.title)
+try:
+    sheet = client.open("consulta_ativa").sheet1
+    st.success("✅ Conectado com sucesso à planilha.")
+except Exception as e:
+    st.error(f"Erro ao conectar: {e}")
+
 
 
 def carregar_cpfs_ativos():
