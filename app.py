@@ -165,7 +165,7 @@ if menu == "Registros Consulta Ativa":
             (df['Número CPF/CNPJ'] == cpf_input) &
             (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
             (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
-            (~df['Código Linha Crédito'].isin([140073, 138358, 141011]))
+            (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 101014, 137510]))
         ]
 
         for _, row in filtrado.iterrows():
