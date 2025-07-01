@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import json
 
 st.set_page_config(layout="wide")
 
@@ -51,6 +52,13 @@ else:
         st.session_state.df = df
         st.session_state.tomb = tomb
         st.success("✅ Bases carregadas com sucesso.")
+        # 📌 Persistência dos CPFs marcados como 'Consulta Ativa'
+CPFS_ATIVOS_FILE = "consulta_ativa.json"
+if os.path.exists(CPFS_ATIVOS_FILE):
+    with open(CPFS_ATIVOS_FILE, "r") as f:
+        st.session_state.cpfs_ativos = json.load(f)
+else:
+    st.session_state.cpfs_ativos = []
     else:
         st.stop()
 
@@ -93,6 +101,8 @@ if menu == "Consulta Individual":
             if cpf_input not in cpfs_ativos:
                 if st.button("✅ Marcar como Consulta Ativa"):
                     cpfs_ativos.append(cpf_input)
+                    with open(CPFS_ATIVOS_FILE, "w") as f:
+                        json.dump(cpfs_ativos, f)
                     st.success("CPF marcado como Consulta Ativa.")
         else:
             st.warning("Nenhum contrato encontrado com os critérios informados.")
@@ -175,5 +185,6 @@ if menu == "Atualizar Bases":
         st.session_state.df = df
         st.session_state.tomb = tomb
         st.success("✅ Bases atualizadas com sucesso.")
+
 
 
