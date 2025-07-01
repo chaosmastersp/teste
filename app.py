@@ -20,7 +20,7 @@ for key in ["autenticado", "arquivo_novo", "arquivo_tomb"]:
 
 def autenticar():
     senha = st.text_input("Digite a senha para acessar o sistema:", type="password")
-    if senha == "tombamento":
+    if senha == "sua_senha_segura":
         st.session_state.autenticado = True
         st.success("Acesso autorizado.")
     elif senha:
@@ -101,7 +101,7 @@ tomb['Número Contrato'] = tomb['Número Contrato'].astype(str)
 merged = pd.merge(df_filtrado, tomb, left_on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
                       right_on=['CPF Tomador', 'Número Contrato'], how='left')
 
-    merged['Consulta Ativa'] = merged['Número CPF/CNPJ'].isin(cpfs_ativos)
+merged['Consulta Ativa'] = merged['Número CPF/CNPJ'].isin(cpfs_ativos)
 
     resumo = merged.groupby(['CNPJ Empresa Consignante', 'Empresa Consignante']).agg(
         Total_Cooperados=('Número CPF/CNPJ', 'nunique'),
@@ -121,4 +121,6 @@ merged = pd.merge(df_filtrado, tomb, left_on=['Número CPF/CNPJ', 'Número Contr
     ]]
     csv = analitico.to_csv(index=False).encode('utf-8')
     st.download_button("📤 Baixar relação analítica (.csv)", data=csv, file_name="relacao_analitica.csv", mime="text/csv")
+
+
 
