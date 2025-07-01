@@ -196,4 +196,58 @@ if menu == "Registros Consulta Ativa":
         st.info("Nenhum registro encontrado para os CPFs marcados como Consulta Ativa.")
 
 
+if menu == "Resumo":
+    st.title("📊 Resumo Consolidado por Consignante")
+
+    df = st.session_state.novo_df
+    tomb = st.session_state.tomb_df
+
+    resultados = []
+
+    for cpf_input in cpfs_ativos:
+        filtrado = df[
+            (df['Número CPF/CNPJ'] == cpf_input) &
+            (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
+            (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
+            (~df['Código Linha Crédito'].isin([140073, 138358, 141011]))
+        ]
+
+        for _, row in filtrado.iterrows():
+            contrato = str(row['Número Contrato Crédito'])
+            match = tomb[
+                (tomb['CPF Tomador'] == cpf_input) &
+                (tomb['Número Contrato'] == contrato)
+            ]
+
+            consignante = match['CNPJ Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
+            empresa = match['Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
+
+            resultados.append({
+                "CNPJ Empresa Consignante": consignante,
+                "Empresa Consignante": empresa,
+                "CPF": cpf_input
+            })
+
+    if resultados:
+        df_result = pd.DataFrame(resultados)
+        resumo = df_result.groupby(["CNPJ Empresa Consignante", "Empresa Consignante"]).agg(
+            Total_Cooperados=("CPF", "nunique"),
+            Total_Contratos=("CPF", "count"),
+            Total_Consulta_Ativa=("CPF", lambda x: x.isin(cpfs_ativos).sum())
+        ).reset_index()
+
+        st.dataframe(resumo)
+
+        with st.expander("📥 Exportar relação analítica"):
+            st.download_button(
+                label="Exportar para Excel",
+                data=df_result.to_excel(index=False, engine='openpyxl'),
+                file_name="registros_consulta_ativa.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    else:
+        st.info("Nenhum dado encontrado para exibir no resumo.")
+
+
+
 
