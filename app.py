@@ -40,7 +40,6 @@ if "df" not in st.session_state or "tomb" not in st.session_state:
         st.session_state.df = df
         st.session_state.tomb = tomb
         st.success("✅ Bases carregadas com sucesso.")
-        st.experimental_rerun()
     else:
         st.stop()
 
@@ -164,6 +163,5 @@ if menu == "Atualizar Bases":
         st.session_state.df = df
         st.session_state.tomb = tomb
         st.success("✅ Bases atualizadas com sucesso.")
-        st.experimental_rerun()
 
 
