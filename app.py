@@ -1,19 +1,18 @@
-
 import streamlit as st
 import pandas as pd
 import os
+import json
 import gspread
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
-import json
 
 st.set_page_config(page_title="Consulta de Empréstimos", layout="wide")
 
 # Google Sheets Setup
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-client = gspread.authorize(creds)
 creds_dict = json.loads(st.secrets["gspread"]["json"])
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+client = gspread.authorize(creds)
 sheet = client.open("consulta_ativa").sheet1
 
 def carregar_cpfs_ativos():
