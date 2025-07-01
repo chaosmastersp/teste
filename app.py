@@ -239,15 +239,19 @@ if menu == "Resumo":
         st.dataframe(resumo)
 
         with st.expander("📥 Exportar relação analítica"):
-            st.download_button(
-                label="Exportar para Excel",
-                data=df_result.to_excel(index=False, engine='openpyxl'),
-                file_name="registros_consulta_ativa.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            import io
+            with io.BytesIO() as buffer:
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    df_result.to_excel(writer, index=False, sheet_name="Consulta Ativa")
+                buffer.seek(0)
+                st.download_button(
+                    label="Exportar para Excel",
+                    data=buffer,
+                    file_name="registros_consulta_ativa.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
     else:
         st.info("Nenhum dado encontrado para exibir no resumo.")
-
 
 
 
