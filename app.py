@@ -60,6 +60,10 @@ if "st.session_state.cpfs_ativos" not in st.session_state:
             st.session_state.st.session_state.cpfs_ativos = json.load(f)
     else:
         st.session_state.cpfs_ativos = []
+        # Diagnóstico de filtros
+        total_antes_filtro = df[df['Número CPF/CNPJ'] == cpf_input].shape[0]
+        total_depois_filtro = df_filtrado.shape[0] if 'df_filtrado' in locals() else 0
+        st.info(f"🔍 Registros encontrados para o CPF: {total_antes_filtro} antes do filtro, {total_depois_filtro} após filtro.")
     st.warning("Nenhum contrato encontrado com os critérios informados.")
 
 if menu == "Registros de Consulta Ativa":
@@ -140,6 +144,7 @@ if menu == "Atualizar Bases":
         st.session_state.df = df
         st.session_state.tomb = tomb
         st.success("✅ Bases atualizadas com sucesso.")
+
 
 
 
