@@ -14,7 +14,8 @@ if not st.session_state.autenticado:
     senha = st.text_input("Digite a senha de acesso:", type="password")
     if senha == senha_correta:
         st.session_state.autenticado = True
-        st.experimental_rerun()
+        st.success("✅ Acesso liberado. Agora carregue as bases.")
+        st.stop()
     else:
         st.stop()
 
@@ -163,6 +164,5 @@ if menu == "Atualizar Bases":
         st.session_state.tomb = tomb
         st.success("✅ Bases atualizadas com sucesso.")
         st.experimental_rerun()
-
 
 
