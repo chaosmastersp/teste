@@ -13,7 +13,7 @@ scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/au
 creds_dict = json.loads(st.secrets["gspread"]["json"])
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
-sheet = client.open("consulta_ativa").sheet1
+sheet = client.open("consulta_ativa").Sheet1
 
 def carregar_cpfs_ativos():
     try:
