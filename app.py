@@ -2,128 +2,167 @@
 import streamlit as st
 import pandas as pd
 import os
-import json
 
-st.set_page_config(page_title="Consulta de Empréstimos", layout="wide")
+st.set_page_config(layout="wide")
 
-DATA_DIR = "data"
-NOVO_PATH = os.path.join(DATA_DIR, "novoemprestimo.xlsx")
-TOMB_PATH = os.path.join(DATA_DIR, "tombamento.xlsx")
-CONSULTA_ATIVA_PATH = os.path.join(DATA_DIR, "consultas_ativas.json")
+# Autenticação simples por senha
+senha_correta = "1234"
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
 
-if not os.path.exists(DATA_DIR):
-    os.makedirs(DATA_DIR)
-
-for key in ["autenticado", "arquivo_novo", "arquivo_tomb"]:
-    if key not in st.session_state:
-        st.session_state[key] = None if key != "autenticado" else False
-
-def autenticar():
-    senha = st.text_input("Digite a senha para acessar o sistema:", type="password")
-    if senha == "tombamento":
-        st.session_state.autenticado = True
-        st.success("Acesso autorizado.")
-    elif senha:
-        st.error("Senha incorreta.")
-
-autenticar()
 if not st.session_state.autenticado:
-    st.stop()
-
-def formatar_documentos(df, col, tamanho):
-    return df[col].astype(str).str.replace(r'\D', '', regex=True).str.zfill(tamanho)
-
-def carregar_bases_do_disco():
-    st.session_state.novo_df = pd.read_excel(NOVO_PATH)
-    st.session_state.tomb_df = pd.read_excel(TOMB_PATH)
-    st.session_state.novo_df['Número CPF/CNPJ'] = formatar_documentos(st.session_state.novo_df, 'Número CPF/CNPJ', 11)
-    st.session_state.tomb_df['CPF Tomador'] = formatar_documentos(st.session_state.tomb_df, 'CPF Tomador', 11)
-    if 'Número Contrato' in st.session_state.tomb_df.columns:
-        st.session_state.tomb_df['Número Contrato'] = st.session_state.tomb_df['Número Contrato'].astype(str)
-
-def salvar_arquivos(upload_novo, upload_tomb):
-    with open(NOVO_PATH, "wb") as f:
-        f.write(upload_novo.read())
-    with open(TOMB_PATH, "wb") as f:
-        f.write(upload_tomb.read())
-    carregar_bases_do_disco()
-
-def carregar_cpfs_ativos():
-    if os.path.exists(CONSULTA_ATIVA_PATH):
-        with open(CONSULTA_ATIVA_PATH, "r") as f:
-            return json.load(f).get("cpfs", [])
-    return []
-
-def salvar_cpfs_ativos(lista):
-    with open(CONSULTA_ATIVA_PATH, "w") as f:
-        json.dump({"cpfs": lista}, f)
-
-menu = st.sidebar.radio("📌 Navegação", ["Consulta Individual", "Registros de Consulta Ativa", "Resumo", "Atualizar Bases"])
-
-if menu == "Atualizar Bases":
-    st.sidebar.markdown("### Upload de Novas Bases")
-    st.session_state.arquivo_novo = st.sidebar.file_uploader("Nova Base NovoEmprestimo.xlsx", type="xlsx")
-    st.session_state.arquivo_tomb = st.sidebar.file_uploader("Nova Base Tombamento.xlsx", type="xlsx")
-    if st.session_state.arquivo_novo and st.session_state.arquivo_tomb:
-        salvar_arquivos(st.session_state.arquivo_novo, st.session_state.arquivo_tomb)
-        st.rerun()
-    else:
-        st.warning("⚠️ Envie os dois arquivos para atualizar.")
-    st.stop()
-
-if not os.path.exists(NOVO_PATH) or not os.path.exists(TOMB_PATH):
-    st.info("Faça o upload das bases para iniciar o sistema.")
-    arquivo_novo = st.file_uploader("Base NovoEmprestimo.xlsx", type="xlsx", key="upload_novo")
-    arquivo_tomb = st.file_uploader("Base Tombamento.xlsx", type="xlsx", key="upload_tomb")
-    if arquivo_novo and arquivo_tomb:
-        salvar_arquivos(arquivo_novo, arquivo_tomb)
-        st.success("Bases carregadas com sucesso.")
-        st.rerun()
+    senha = st.text_input("Digite a senha de acesso:", type="password")
+    if senha == senha_correta:
+        st.session_state.autenticado = True
+        st.experimental_rerun()
     else:
         st.stop()
-else:
-    carregar_bases_do_disco()
 
-df = st.session_state.novo_df
-tomb = st.session_state.tomb_df
-cpfs_ativos = carregar_cpfs_ativos()
+st.sidebar.title("🔍 Navegação")
+menu = st.sidebar.radio("Ir para:", ["Consulta Individual", "Registros de Consulta Ativa", "Resumo", "Atualizar Bases"])
 
+# Inicialização do estado com as bases
+if "df" not in st.session_state or "tomb" not in st.session_state:
+    st.sidebar.warning("📂 Carregue as bases de dados para iniciar.")
+    novo_file = st.sidebar.file_uploader("📄 NovoEmprestimo.xlsx", type="xlsx")
+    tomb_file = st.sidebar.file_uploader("📄 Tombamento.xlsx", type="xlsx")
+    if novo_file and tomb_file:
+        df = pd.read_excel(novo_file)
+        tomb = pd.read_excel(tomb_file)
+
+        df["Número CPF/CNPJ"] = df["Número CPF/CNPJ"].astype(str).str.replace(r"\D", "", regex=True).str.zfill(11)
+        df["Número Contrato Crédito"] = df["Número Contrato Crédito"].astype(str)
+        tomb["CPF Tomador"] = tomb["CPF Tomador"].astype(str).str.replace(r"\D", "", regex=True).str.zfill(11)
+        tomb["Número Contrato"] = tomb["Número Contrato"].astype(str)
+
+        st.session_state.df = df
+        st.session_state.tomb = tomb
+        st.success("✅ Bases carregadas com sucesso.")
+        st.experimental_rerun()
+    else:
+        st.stop()
+
+# Carregar bases do estado
+df = st.session_state.df
+tomb = st.session_state.tomb
+
+# Lista de CPFs marcados como Consulta Ativa
+if "cpfs_ativos" not in st.session_state:
+    st.session_state.cpfs_ativos = []
+
+cpfs_ativos = st.session_state.cpfs_ativos
+
+if menu == "Consulta Individual":
+    st.title("🔎 Consulta de CPF")
+    cpf_input = st.text_input("Digite o CPF (somente números):")
+    if st.button("Consultar"):
+        cpf_input = cpf_input.strip().zfill(11)
+        resultados = df[
+            (df["Número CPF/CNPJ"] == cpf_input) &
+            (df["Submodalidade Bacen"] == "CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.") &
+            (df["Critério Débito"] == "FOLHA DE PAGAMENTO") &
+            (~df["Código Linha Crédito"].isin([140073, 138358, 141011]))
+        ]
+
+        if not resultados.empty:
+            resultados["Número Contrato Crédito"] = resultados["Número Contrato Crédito"].astype(str)
+            tomb["Número Contrato"] = tomb["Número Contrato"].astype(str)
+            merged = pd.merge(resultados, tomb, how="left",
+                              left_on=["Número CPF/CNPJ", "Número Contrato Crédito"],
+                              right_on=["CPF Tomador", "Número Contrato"])
+
+            st.dataframe(merged[[
+                "Número CPF/CNPJ", "Nome Cliente", "Número Contrato Crédito",
+                "Quantidade Parcelas Abertas", "% Taxa Operação", "Código Linha Crédito",
+                "Nome Comercial", "CNPJ Empresa Consignante", "Empresa Consignante"
+            ]])
+
+            if cpf_input not in cpfs_ativos:
+                if st.button("✅ Marcar como Consulta Ativa"):
+                    cpfs_ativos.append(cpf_input)
+                    st.success("CPF marcado como Consulta Ativa.")
+        else:
+            st.warning("Nenhum contrato encontrado com os critérios informados.")
+
+if menu == "Registros de Consulta Ativa":
+    st.title("📌 Registros com Consulta Ativa")
+    df_filtrado = df[
+        (df["Submodalidade Bacen"] == "CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.") &
+        (df["Critério Débito"] == "FOLHA DE PAGAMENTO") &
+        (~df["Código Linha Crédito"].isin([140073, 138358, 141011]))
+    ]
+    df_filtrado["Número Contrato Crédito"] = df_filtrado["Número Contrato Crédito"].astype(str)
+    tomb["Número Contrato"] = tomb["Número Contrato"].astype(str)
+
+    merged = pd.merge(df_filtrado, tomb,
+                      left_on=["Número CPF/CNPJ", "Número Contrato Crédito"],
+                      right_on=["CPF Tomador", "Número Contrato"], how="left")
+    merged = merged[merged["Número CPF/CNPJ"].isin(cpfs_ativos)]
+
+    if not merged.empty:
+        st.dataframe(merged[[
+            "Número CPF/CNPJ", "Nome Cliente", "Número Contrato Crédito",
+            "Quantidade Parcelas Abertas", "% Taxa Operação", "Código Linha Crédito",
+            "Nome Comercial", "CNPJ Empresa Consignante", "Empresa Consignante"
+        ]])
+    else:
+        st.warning("Nenhum registro com Consulta Ativa.")
 
 if menu == "Resumo":
     st.title("📊 Resumo por Consignante")
 
     df_filtrado = df[
-        (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
-        (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
-        (~df['Código Linha Crédito'].isin([140073, 138358, 141011]))
+        (df["Submodalidade Bacen"] == "CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.") &
+        (df["Critério Débito"] == "FOLHA DE PAGAMENTO") &
+        (~df["Código Linha Crédito"].isin([140073, 138358, 141011]))
     ]
 
-    df_filtrado['Número Contrato Crédito'] = df_filtrado['Número Contrato Crédito'].astype(str)
-    tomb['Número Contrato'] = tomb['Número Contrato'].astype(str)
+    df_filtrado["Número Contrato Crédito"] = df_filtrado["Número Contrato Crédito"].astype(str)
+    tomb["Número Contrato"] = tomb["Número Contrato"].astype(str)
 
     merged = pd.merge(df_filtrado, tomb,
-                      left_on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
-                      right_on=['CPF Tomador', 'Número Contrato'], how='left')
+                      left_on=["Número CPF/CNPJ", "Número Contrato Crédito"],
+                      right_on=["CPF Tomador", "Número Contrato"], how="left")
 
-    merged['Consulta Ativa'] = merged['Número CPF/CNPJ'].isin(cpfs_ativos)
-    merged['Consulta Ativa'] = merged['Consulta Ativa'].apply(lambda x: 'Sim' if x else 'Não')
+    merged["Consulta Ativa"] = merged["Número CPF/CNPJ"].isin(cpfs_ativos)
+    merged["Consulta Ativa"] = merged["Consulta Ativa"].apply(lambda x: "Sim" if x else "Não")
 
-    resumo = merged.groupby(['CNPJ Empresa Consignante', 'Empresa Consignante']).agg(
-        Total_Cooperados=('Número CPF/CNPJ', 'nunique'),
-        Total_de_Contratos=('Número Contrato Crédito', 'count'),
-        Total_Consulta_Ativa=('Consulta Ativa', lambda x: (x == 'Sim').sum())
+    resumo = merged.groupby(["CNPJ Empresa Consignante", "Empresa Consignante"]).agg(
+        Total_Cooperados=("Número CPF/CNPJ", "nunique"),
+        Total_de_Contratos=("Número Contrato Crédito", "count"),
+        Total_Consulta_Ativa=("Consulta Ativa", lambda x: (x == "Sim").sum())
     ).reset_index()
 
     st.dataframe(resumo)
 
     st.markdown("### 📥 Exportar Relação Analítica")
     analitico = merged[[
-        'Número CPF/CNPJ', 'Nome Cliente', 'Número Contrato Crédito',
-        'Quantidade Parcelas Abertas', '% Taxa Operação', 'Código Linha Crédito',
-        'Nome Comercial', 'CNPJ Empresa Consignante', 'Empresa Consignante',
-        'Consulta Ativa'
+        "Número CPF/CNPJ", "Nome Cliente", "Número Contrato Crédito",
+        "Quantidade Parcelas Abertas", "% Taxa Operação", "Código Linha Crédito",
+        "Nome Comercial", "CNPJ Empresa Consignante", "Empresa Consignante",
+        "Consulta Ativa"
     ]]
-    csv = analitico.to_csv(index=False).encode('utf-8')
+    csv = analitico.to_csv(index=False).encode("utf-8")
     st.download_button("📤 Baixar CSV Analítico", data=csv, file_name="relacao_analitica.csv", mime="text/csv")
+
+if menu == "Atualizar Bases":
+    st.title("🔄 Atualizar Bases de Dados")
+    novo_file = st.file_uploader("📄 NovoEmprestimo.xlsx", type="xlsx")
+    tomb_file = st.file_uploader("📄 Tombamento.xlsx", type="xlsx")
+
+    if novo_file and tomb_file:
+        df = pd.read_excel(novo_file)
+        tomb = pd.read_excel(tomb_file)
+
+        df["Número CPF/CNPJ"] = df["Número CPF/CNPJ"].astype(str).str.replace(r"\D", "", regex=True).str.zfill(11)
+        df["Número Contrato Crédito"] = df["Número Contrato Crédito"].astype(str)
+        tomb["CPF Tomador"] = tomb["CPF Tomador"].astype(str).str.replace(r"\D", "", regex=True).str.zfill(11)
+        tomb["Número Contrato"] = tomb["Número Contrato"].astype(str)
+
+        st.session_state.df = df
+        st.session_state.tomb = tomb
+        st.success("✅ Bases atualizadas com sucesso.")
+        st.experimental_rerun()
+
 
 
