@@ -20,7 +20,7 @@ for key in ["autenticado", "arquivo_novo", "arquivo_tomb"]:
 
 def autenticar():
     senha = st.text_input("Digite a senha para acessar o sistema:", type="password")
-    if senha == "tombamento":
+    if senha == "sua_senha_segura":
         st.session_state.autenticado = True
         st.success("Acesso autorizado.")
     elif senha:
@@ -36,7 +36,6 @@ def formatar_documentos(df, col, tamanho):
 def carregar_bases_do_disco():
     st.session_state.novo_df = pd.read_excel(NOVO_PATH)
     st.session_state.tomb_df = pd.read_excel(TOMB_PATH)
-
     st.session_state.novo_df['Número CPF/CNPJ'] = formatar_documentos(st.session_state.novo_df, 'Número CPF/CNPJ', 11)
     st.session_state.tomb_df['CPF Tomador'] = formatar_documentos(st.session_state.tomb_df, 'CPF Tomador', 11)
     if 'Número Contrato' in st.session_state.tomb_df.columns:
@@ -59,8 +58,7 @@ def salvar_cpfs_ativos(lista):
     with open(CONSULTA_ATIVA_PATH, "w") as f:
         json.dump({"cpfs": lista}, f)
 
-# ----------------------------- MENU LATERAL -----------------------------
-menu = st.sidebar.radio("📌 Navegação", ["Consulta Individual", "Registros de Consulta Ativa", "Atualizar Bases"])
+menu = st.sidebar.radio("📌 Navegação", ["Consulta Individual", "Registros de Consulta Ativa", "Resumo", "Atualizar Bases"])
 
 if menu == "Atualizar Bases":
     st.sidebar.markdown("### Upload de Novas Bases")
@@ -86,103 +84,40 @@ if not os.path.exists(NOVO_PATH) or not os.path.exists(TOMB_PATH):
 else:
     carregar_bases_do_disco()
 
-# ----------------------------- ABA 1 - CONSULTA INDIVIDUAL -----------------------------
-if menu == "Consulta Individual":
-    st.title("🔍 Consulta de Empréstimos por CPF")
-    cpf_input = st.text_input("Digite o CPF (apenas números):").strip()
+df = st.session_state.novo_df
+tomb = st.session_state.tomb_df
+cpfs_ativos = carregar_cpfs_ativos()
 
-    if cpf_input and len(cpf_input) == 11 and cpf_input.isdigit():
-        df = st.session_state.novo_df
-        tomb = st.session_state.tomb_df
+if menu == "Resumo":
+    st.title("📊 Resumo por Empresa Consignante")
 
-        filtrado = df[
-            (df['Número CPF/CNPJ'] == cpf_input) &
-            (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
-            (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
-            (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 140073, 137510]))
-        ]
+    df_filtrado = df[
+        (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
+        (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
+        (~df['Código Linha Crédito'].isin([140073, 138358, 141011]))
+    ]
+    merged = pd.merge(df_filtrado, tomb, left_on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
+                      right_on=['CPF Tomador', 'Número Contrato'], how='left')
 
-        if filtrado.empty:
-            st.warning("Nenhum contrato encontrado com os filtros aplicados.")
-        else:
-            resultados = []
-            for _, row in filtrado.iterrows():
-                contrato = str(row['Número Contrato Crédito'])
-                match = tomb[
-                    (tomb['CPF Tomador'] == cpf_input) &
-                    (tomb['Número Contrato'] == contrato)
-                ]
+    merged['Consulta Ativa'] = merged['Número CPF/CNPJ'].isin(cpfs_ativos)
 
-                cnpj_consignante = match['CNPJ Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
-                empresa = match['Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
+    resumo = merged.groupby(['CNPJ Empresa Consignante', 'Empresa Consignante']).agg(
+        Total_Cooperados=('Número CPF/CNPJ', 'nunique'),
+        Total_de_Contratos=('Número Contrato Crédito', 'count'),
+        Total_Consulta_Ativa=('Consulta Ativa', 'sum')
+    ).reset_index()
 
-                resultados.append({
-                    "Número CPF/CNPJ": row['Número CPF/CNPJ'],
-                    "Nome Cliente": row['Nome Cliente'],
-                    "Número Contrato Crédito": contrato,
-                    "Quantidade Parcelas Abertas": row['Quantidade Parcelas Abertas'],
-                    "% Taxa Operação": row['% Taxa Operação'],
-                    "Código Linha Crédito": row['Código Linha Crédito'],
-                    "Nome Comercial": row['Nome Comercial'],
-                    "CNPJ Empresa Consignante": cnpj_consignante,
-                    "Empresa Consignante": empresa
-                })
+    st.dataframe(resumo)
 
-            st.dataframe(pd.DataFrame(resultados))
+    # Exportar relação analítica
+    st.markdown("### 📥 Exportar Relação Analítica")
+    merged['Consulta Ativa'] = merged['Consulta Ativa'].apply(lambda x: 'Sim' if x else 'Não')
+    analitico = merged[[
+        'Número CPF/CNPJ', 'Nome Cliente', 'Número Contrato Crédito', 'Quantidade Parcelas Abertas',
+        '% Taxa Operação', 'Código Linha Crédito', 'Nome Comercial',
+        'CNPJ Empresa Consignante', 'Empresa Consignante', 'Consulta Ativa'
+    ]]
+    csv = analitico.to_csv(index=False).encode('utf-8')
+    st.download_button("📤 Baixar relação analítica (.csv)", data=csv, file_name="relacao_analitica.csv", mime="text/csv")
 
-            if st.button("Marcar CPF como Consulta Ativa"):
-                lista_cpfs = carregar_cpfs_ativos()
-                if cpf_input not in lista_cpfs:
-                    lista_cpfs.append(cpf_input)
-                    salvar_cpfs_ativos(lista_cpfs)
-                    st.success("CPF marcado como Consulta Ativa.")
-                else:
-                    st.info("Este CPF já está marcado como Consulta Ativa.")
-    else:
-        st.info("Insira um CPF válido com 11 dígitos.")
-
-# ----------------------------- ABA 2 - CONSULTAS ATIVAS -----------------------------
-if menu == "Registros de Consulta Ativa":
-    st.title("📄 Registros com Consulta Ativa")
-    cpfs_ativos = carregar_cpfs_ativos()
-    if cpfs_ativos:
-        df = st.session_state.novo_df
-        tomb = st.session_state.tomb_df
-        todos_resultados = []
-
-        for cpf in cpfs_ativos:
-            registros = df[
-                (df['Número CPF/CNPJ'] == cpf) &
-                (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
-                (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
-                (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 140073, 137510]))
-            ]
-            for _, row in registros.iterrows():
-                contrato = str(row['Número Contrato Crédito'])
-                match = tomb[
-                    (tomb['CPF Tomador'] == cpf) &
-                    (tomb['Número Contrato'] == contrato)
-                ]
-                cnpj = match['CNPJ Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
-                empresa = match['Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
-
-                todos_resultados.append({
-                    "Número CPF/CNPJ": row['Número CPF/CNPJ'],
-                    "Nome Cliente": row['Nome Cliente'],
-                    "Número Contrato Crédito": contrato,
-                    "Quantidade Parcelas Abertas": row['Quantidade Parcelas Abertas'],
-                    "% Taxa Operação": row['% Taxa Operação'],
-                    "Código Linha Crédito": row['Código Linha Crédito'],
-                    "Nome Comercial": row['Nome Comercial'],
-                    "CNPJ Empresa Consignante": cnpj,
-                    "Empresa Consignante": empresa
-                })
-
-        df_final = pd.DataFrame(todos_resultados)
-        if not df_final.empty:
-            for consignante, grupo in df_final.groupby("Empresa Consignante"):
-                st.subheader(f"Empresa Consignante: {consignante}")
-                st.dataframe(grupo.reset_index(drop=True))
-    else:
-        st.info("Nenhum CPF marcado como Consulta Ativa.")
 
