@@ -212,7 +212,7 @@ if menu == "Resumo":
             continue
         if row['Critério Débito'] != 'FOLHA DE PAGAMENTO':
             continue
-        if row['Código Linha Crédito'] in [140073, 138358, 141011]:
+        if row['Código Linha Crédito'] in [140073, 138358, 141011, 101014, 137510]:
             continue
 
         match = tomb[
@@ -270,7 +270,7 @@ if menu == "Inconsistências":
     filtrado = df[
         (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
         (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
-        (~df['Código Linha Crédito'].isin([140073, 138358, 141011]))
+        (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 101014, 137510]))
     ].copy()
 
     filtrado['Origem'] = filtrado.apply(
