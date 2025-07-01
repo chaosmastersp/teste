@@ -20,7 +20,7 @@ for key in ["autenticado", "arquivo_novo", "arquivo_tomb"]:
 
 def autenticar():
     senha = st.text_input("Digite a senha para acessar o sistema:", type="password")
-    if senha == "sua_senha_segura":
+    if senha == "tombamento":
         st.session_state.autenticado = True
         st.success("Acesso autorizado.")
     elif senha:
