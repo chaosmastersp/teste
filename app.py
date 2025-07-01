@@ -52,10 +52,12 @@ if "df" not in st.session_state or "tomb" not in st.session_state:
     st.session_state.tomb = tomb
 
 # ==== Persistência de CPFs marcados como Consulta Ativa ====
-CPFS_ATIVOS_FILE = "consulta_ativa.json"
+import pathlib
+APP_DIR = pathlib.Path(__file__).parent
+CPFS_ATIVOS_FILE = APP_DIR / "consulta_ativa.json"
 if "cpfs_ativos" not in st.session_state:
     if os.path.exists(CPFS_ATIVOS_FILE):
-        with open(CPFS_ATIVOS_FILE, "r") as f:
+        with open(CPFS_ATIVOS_FILE, "r", encoding="utf-8") as f:
             st.session_state.cpfs_ativos = json.load(f)
     else:
         st.session_state.cpfs_ativos = []
@@ -93,7 +95,7 @@ if menu == "Consulta Individual":
                 if cpf_input not in st.session_state.cpfs_ativos:
                     if st.button("Marcar como Consulta Ativa"):
                         st.session_state.cpfs_ativos.append(cpf_input)
-                        with open(CPFS_ATIVOS_FILE, "w") as f:
+                        with open(CPFS_ATIVOS_FILE, "w", encoding="utf-8") as f:
                             json.dump(st.session_state.cpfs_ativos, f)
                         st.success("✅ CPF marcado com sucesso.")
             else:
@@ -171,8 +173,9 @@ elif menu == "Atualizar Bases":
         if st.session_state.cpf_em_analise not in st.session_state.cpfs_ativos:
             if st.button("Marcar como Consulta Ativa"):
                 st.session_state.cpfs_ativos.append(st.session_state.cpf_em_analise)
-                with open(CPFS_ATIVOS_FILE, "w") as f:
+                with open(CPFS_ATIVOS_FILE, "w", encoding="utf-8") as f:
                     json.dump(st.session_state.cpfs_ativos, f)
                 st.success("✅ CPF marcado com sucesso.")
+
 
 
