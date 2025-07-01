@@ -88,34 +88,42 @@ df = st.session_state.novo_df
 tomb = st.session_state.tomb_df
 cpfs_ativos = carregar_cpfs_ativos()
 
+
 if menu == "Resumo":
-    st.title("📊 Resumo por Empresa Consignante")
+    st.title("📊 Resumo por Consignante")
 
     df_filtrado = df[
         (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
         (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
         (~df['Código Linha Crédito'].isin([140073, 138358, 141011]))
     ]
-    df_filtrado['Número Contrato Crédito'] = df_filtrado['Número Contrato Crédito'].astype(str)
-tomb['Número Contrato'] = tomb['Número Contrato'].astype(str)
 
-resumo = merged.groupby(['CNPJ Empresa Consignante', 'Empresa Consignante']).agg(
+    df_filtrado['Número Contrato Crédito'] = df_filtrado['Número Contrato Crédito'].astype(str)
+    tomb['Número Contrato'] = tomb['Número Contrato'].astype(str)
+
+    merged = pd.merge(df_filtrado, tomb,
+                      left_on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
+                      right_on=['CPF Tomador', 'Número Contrato'], how='left')
+
+    merged['Consulta Ativa'] = merged['Número CPF/CNPJ'].isin(cpfs_ativos)
+    merged['Consulta Ativa'] = merged['Consulta Ativa'].apply(lambda x: 'Sim' if x else 'Não')
+
+    resumo = merged.groupby(['CNPJ Empresa Consignante', 'Empresa Consignante']).agg(
         Total_Cooperados=('Número CPF/CNPJ', 'nunique'),
         Total_de_Contratos=('Número Contrato Crédito', 'count'),
-        Total_Consulta_Ativa=('Consulta Ativa', 'sum')
+        Total_Consulta_Ativa=('Consulta Ativa', lambda x: (x == 'Sim').sum())
     ).reset_index()
 
-st.dataframe(resumo)
+    st.dataframe(resumo)
 
-    # Exportar relação analítica
-st.markdown("### 📥 Exportar Relação Analítica")
-merged['Consulta Ativa'] = merged['Consulta Ativa'].apply(lambda x: 'Sim' if x else 'Não')
-analitico = merged[[
-        'Número CPF/CNPJ', 'Nome Cliente', 'Número Contrato Crédito', 'Quantidade Parcelas Abertas',
-        '% Taxa Operação', 'Código Linha Crédito', 'Nome Comercial',
-        'CNPJ Empresa Consignante', 'Empresa Consignante', 'Consulta Ativa'
+    st.markdown("### 📥 Exportar Relação Analítica")
+    analitico = merged[[
+        'Número CPF/CNPJ', 'Nome Cliente', 'Número Contrato Crédito',
+        'Quantidade Parcelas Abertas', '% Taxa Operação', 'Código Linha Crédito',
+        'Nome Comercial', 'CNPJ Empresa Consignante', 'Empresa Consignante',
+        'Consulta Ativa'
     ]]
-csv = analitico.to_csv(index=False).encode('utf-8')
-st.download_button("📤 Baixar relação analítica (.csv)", data=csv, file_name="relacao_analitica.csv", mime="text/csv")
+    csv = analitico.to_csv(index=False).encode('utf-8')
+    st.download_button("📤 Baixar CSV Analítico", data=csv, file_name="relacao_analitica.csv", mime="text/csv")
 
 
