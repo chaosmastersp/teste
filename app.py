@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import os
@@ -13,18 +14,14 @@ scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/au
 creds_dict = json.loads(st.secrets["gspread"]["json"])
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
-try:
-    sheet = client.open("consulta_ativa").sheet1
-    st.success("✅ Conectado com sucesso à planilha.")
-except Exception as e:
-    st.error(f"Erro ao conectar: {e}")
-
-
+sheet = client.open("consulta_ativa").sheet1
 
 def carregar_cpfs_ativos():
     try:
-        data = sheet.get_all_records()
-        return [row["CPF"] for row in data]
+        values = sheet.get_all_values()
+        if not values or len(values) < 2:
+            return []
+        return [row[0] for row in values[1:]]  # Ignora cabeçalho
     except:
         return []
 
@@ -197,7 +194,6 @@ if menu == "Registros Consulta Ativa":
         st.dataframe(pd.DataFrame(registros))
     else:
         st.info("Nenhum registro encontrado para os CPFs marcados como Consulta Ativa.")
-
 
 
 
