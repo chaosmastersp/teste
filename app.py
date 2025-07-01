@@ -153,7 +153,7 @@ if menu == "Consulta Individual":
                 if st.button("Marcar como Consulta Ativa"):
                     marcar_cpf_ativo(cpf_input)
                     st.success("✅ CPF marcado com sucesso.")
-                    st.experimental_rerun()
+                    st.rerun()
 
 if menu == "Registros Consulta Ativa":
     st.title("📋 Registros de Consulta Ativa")
