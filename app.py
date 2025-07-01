@@ -59,7 +59,7 @@ if "st.session_state.cpfs_ativos" not in st.session_state:
         with open(CPFS_ATIVOS_FILE, "r") as f:
             st.session_state.st.session_state.cpfs_ativos = json.load(f)
     else:
-        st.session_state.st.session_state.cpfs_ativos = []
+        st.session_state.cpfs_ativos = []
     st.warning("Nenhum contrato encontrado com os critérios informados.")
 
 if menu == "Registros de Consulta Ativa":
