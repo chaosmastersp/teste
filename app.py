@@ -12,10 +12,11 @@ if "autenticado" not in st.session_state:
 
 if not st.session_state.autenticado:
     senha = st.text_input("Digite a senha de acesso:", type="password")
+    if senha != senha_correta:
+        st.stop()
     if senha == senha_correta:
         st.session_state.autenticado = True
-        st.success("✅ Acesso liberado. Agora carregue as bases.")
-        st.stop()
+        st.success("✅ Acesso liberado.")
     else:
         st.stop()
 
