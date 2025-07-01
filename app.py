@@ -1,181 +1,124 @@
+
 import streamlit as st
 import pandas as pd
 import os
-import json
 
-st.set_page_config(layout="wide")
+st.set_page_config(page_title="Consulta de Empréstimos", layout="wide")
 
-# ==== Autenticação simples ====
-senha_correta = "1234"
-if "autenticado" not in st.session_state:
-    st.session_state.autenticado = False
+# Inicialização do estado
+for key in ["autenticado", "arquivo_novo", "arquivo_tomb"]:
+    if key not in st.session_state:
+        st.session_state[key] = None if key != "autenticado" else False
 
-if not st.session_state.autenticado:
-    senha = st.text_input("Digite a senha de acesso:", type="password")
-    if senha == senha_correta:
+DATA_DIR = "data"
+NOVO_PATH = os.path.join(DATA_DIR, "novoemprestimo.xlsx")
+TOMB_PATH = os.path.join(DATA_DIR, "tombamento.xlsx")
+
+if not os.path.exists(DATA_DIR):
+    os.makedirs(DATA_DIR)
+
+def autenticar():
+    senha = st.text_input("Digite a senha para acessar o sistema:", type="password")
+    if senha == "tombamento":
         st.session_state.autenticado = True
-        st.success("✅ Acesso autorizado.")
+        st.success("Acesso autorizado.")
+    elif senha:
+        st.error("Senha incorreta.")
+
+autenticar()
+if not st.session_state.autenticado:
+    st.stop()
+
+def formatar_documentos(df, col, tamanho):
+    return df[col].astype(str).str.replace(r'\D', '', regex=True).str.zfill(tamanho)
+
+def carregar_bases_do_disco():
+    st.session_state.novo_df = pd.read_excel(NOVO_PATH)
+    st.session_state.tomb_df = pd.read_excel(TOMB_PATH)
+
+    st.session_state.novo_df['Número CPF/CNPJ'] = formatar_documentos(st.session_state.novo_df, 'Número CPF/CNPJ', 11)
+    st.session_state.tomb_df['CPF Tomador'] = formatar_documentos(st.session_state.tomb_df, 'CPF Tomador', 11)
+    if 'Número Contrato' in st.session_state.tomb_df.columns:
+        st.session_state.tomb_df['Número Contrato'] = st.session_state.tomb_df['Número Contrato'].astype(str)
+
+def salvar_arquivos(upload_novo, upload_tomb):
+    with open(NOVO_PATH, "wb") as f:
+        f.write(upload_novo.read())
+    with open(TOMB_PATH, "wb") as f:
+        f.write(upload_tomb.read())
+    carregar_bases_do_disco()
+
+st.sidebar.header("Gerenciamento de Dados")
+
+# Atualizar base
+if st.sidebar.button("Atualizar Bases"):
+    st.session_state.arquivo_novo = st.sidebar.file_uploader("Nova Base NovoEmprestimo.xlsx", type="xlsx")
+    st.session_state.arquivo_tomb = st.sidebar.file_uploader("Nova Base Tombamento.xlsx", type="xlsx")
+    if st.session_state.arquivo_novo and st.session_state.arquivo_tomb:
+        salvar_arquivos(st.session_state.arquivo_novo, st.session_state.arquivo_tomb)
+        st.rerun()
     else:
-        if senha != "":
-            st.error("❌ Senha incorreta.")
+        st.warning("Envie os dois arquivos para atualizar.")
+    st.stop()
+
+# Carregamento inicial: se arquivos não existem, obriga upload
+if not os.path.exists(NOVO_PATH) or not os.path.exists(TOMB_PATH):
+    st.info("Faça o upload das bases para iniciar o sistema.")
+    arquivo_novo = st.file_uploader("Base NovoEmprestimo.xlsx", type="xlsx", key="upload_novo")
+    arquivo_tomb = st.file_uploader("Base Tombamento.xlsx", type="xlsx", key="upload_tomb")
+    if arquivo_novo and arquivo_tomb:
+        salvar_arquivos(arquivo_novo, arquivo_tomb)
+        st.success("Bases carregadas com sucesso.")
+        st.rerun()
+    else:
         st.stop()
+else:
+    carregar_bases_do_disco()
 
-# ==== Navegação ====
-st.sidebar.title("🔍 Navegação")
-menu = st.sidebar.radio("Ir para:", ["Consulta Individual", "Registros de Consulta Ativa", "Resumo", "Atualizar Bases"])
+# Interface principal
+st.title("🔍 Consulta de Empréstimos por CPF")
+cpf_input = st.text_input("Digite o CPF (apenas números):").strip()
 
-# ==== Carregamento das bases ====
-if "df" not in st.session_state or "tomb" not in st.session_state:
-    if os.path.exists("NovoEmprestimo.xlsx") and os.path.exists("Tombamento.xlsx"):
-        df = pd.read_excel("NovoEmprestimo.xlsx")
-        tomb = pd.read_excel("Tombamento.xlsx")
+if cpf_input and len(cpf_input) == 11 and cpf_input.isdigit():
+    df = st.session_state.novo_df
+    tomb = st.session_state.tomb_df
+
+    filtrado = df[
+        (df['Número CPF/CNPJ'] == cpf_input) &
+        (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
+        (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
+        (~df['Código Linha Crédito'].isin([140073, 138358, 141011]))
+    ]
+
+    if filtrado.empty:
+        st.warning("Nenhum contrato encontrado com os filtros aplicados.")
     else:
-        st.sidebar.warning("📂 Carregue as bases para iniciar.")
-        novo_file = st.sidebar.file_uploader("NovoEmprestimo.xlsx", type="xlsx")
-        tomb_file = st.sidebar.file_uploader("Tombamento.xlsx", type="xlsx")
-        if novo_file and tomb_file:
-            with open("NovoEmprestimo.xlsx", "wb") as f:
-                f.write(novo_file.getbuffer())
-            with open("Tombamento.xlsx", "wb") as f:
-                f.write(tomb_file.getbuffer())
-            df = pd.read_excel("NovoEmprestimo.xlsx")
-            tomb = pd.read_excel("Tombamento.xlsx")
-        else:
-            st.stop()
-
-    df["Número CPF/CNPJ"] = df["Número CPF/CNPJ"].astype(str).str.replace(r"\D", "", regex=True).str.zfill(11)
-    df["Número Contrato Crédito"] = df["Número Contrato Crédito"].astype(str)
-    tomb["CPF Tomador"] = tomb["CPF Tomador"].astype(str).str.replace(r"\D", "", regex=True).str.zfill(11)
-    tomb["Número Contrato"] = tomb["Número Contrato"].astype(str)
-
-    st.session_state.df = df
-    st.session_state.tomb = tomb
-
-# ==== Persistência de CPFs marcados como Consulta Ativa ====
-import pathlib
-APP_DIR = pathlib.Path(__file__).parent
-CPFS_ATIVOS_FILE = APP_DIR / "consulta_ativa.json"
-if "cpfs_ativos" not in st.session_state:
-    if os.path.exists(CPFS_ATIVOS_FILE):
-        with open(CPFS_ATIVOS_FILE, "r", encoding="utf-8") as f:
-            st.session_state.cpfs_ativos = json.load(f)
-    else:
-        st.session_state.cpfs_ativos = []
-
-# ==== Consulta Individual ====
-if menu == "Consulta Individual":
-    st.title("🔎 Consulta Individual")
-    df = st.session_state.df
-    tomb = st.session_state.tomb
-
-    cpf_input = st.text_input("Digite o CPF (somente números):", max_chars=11)
-    if cpf_input and len(cpf_input) == 11:
-        if st.button("Consultar"):
-            st.session_state.cpf_em_analise = cpf_input
-            df_filtrado = df[
-                (df["Número CPF/CNPJ"] == cpf_input) &
-                (df["Submodalidade Bacen"] == "CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.") &
-                (df["Critério Débito"] == "FOLHA DE PAGAMENTO") &
-                (~df["Código Linha Crédito"].isin([140073, 138358, 141011]))
+        resultados = []
+        for _, row in filtrado.iterrows():
+            contrato = str(row['Número Contrato Crédito'])
+            match = tomb[
+                (tomb['CPF Tomador'] == cpf_input) &
+                (tomb['Número Contrato'] == contrato)
             ]
-            if not df_filtrado.empty:
-                resultado = df_filtrado.merge(
-                    tomb,
-                    left_on=["Número CPF/CNPJ", "Número Contrato Crédito"],
-                    right_on=["CPF Tomador", "Número Contrato"],
-                    how="left"
-                )
-                resultado["CNPJ Empresa Consignante"] = resultado["CNPJ Empresa Consignante"].fillna("CONSULTE SISBR")
-                resultado["Empresa Consignante"] = resultado["Empresa Consignante"].fillna("CONSULTE SISBR")
-                st.dataframe(resultado[[
-                    "Número CPF/CNPJ", "Nome Cliente", "Número Contrato Crédito", "Quantidade Parcelas Abertas",
-                    "% Taxa Operação", "Código Linha Crédito", "Nome Comercial",
-                    "CNPJ Empresa Consignante", "Empresa Consignante"
-                ]])
-                if cpf_input not in st.session_state.cpfs_ativos:
-                    if st.button("Marcar como Consulta Ativa"):
-                        st.session_state.cpfs_ativos.append(cpf_input)
-                        with open(CPFS_ATIVOS_FILE, "w", encoding="utf-8") as f:
-                            json.dump(st.session_state.cpfs_ativos, f)
-                        st.success("✅ CPF marcado com sucesso.")
-            else:
-                st.warning("Nenhum contrato encontrado com os critérios informados.")
 
-# ==== Registros de Consulta Ativa ====
-elif menu == "Registros de Consulta Ativa":
-    st.title("📌 Registros com Consulta Ativa")
-    df = st.session_state.df
-    tomb = st.session_state.tomb
-    ativos = st.session_state.cpfs_ativos
-    if not ativos:
-        st.info("Nenhum CPF marcado como Consulta Ativa.")
-    else:
-        ativos_df = df[df["Número CPF/CNPJ"].isin(ativos)].copy()
-        ativos_df = ativos_df.merge(
-            tomb,
-            left_on=["Número CPF/CNPJ", "Número Contrato Crédito"],
-            right_on=["CPF Tomador", "Número Contrato"],
-            how="left"
-        )
-        ativos_df["CNPJ Empresa Consignante"] = ativos_df["CNPJ Empresa Consignante"].fillna("CONSULTE SISBR")
-        ativos_df["Empresa Consignante"] = ativos_df["Empresa Consignante"].fillna("CONSULTE SISBR")
-        st.dataframe(ativos_df[[
-            "Número CPF/CNPJ", "Nome Cliente", "Número Contrato Crédito",
-            "CNPJ Empresa Consignante", "Empresa Consignante"
-        ]])
+            consignante = match['CNPJ Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
+            empresa = match['Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
 
-# ==== Resumo ====
-elif menu == "Resumo":
-    st.title("📊 Resumo Consolidado por Consignante")
-    df = st.session_state.df
-    tomb = st.session_state.tomb
-    ativos = st.session_state.cpfs_ativos
+            resultados.append({
+                "Número CPF/CNPJ": row['Número CPF/CNPJ'],
+                "Nome Cliente": row['Nome Cliente'],
+                "Número Contrato Crédito": contrato,
+                "Quantidade Parcelas Abertas": row['Quantidade Parcelas Abertas'],
+                "% Taxa Operação": row['% Taxa Operação'],
+                "Código Linha Crédito": row['Código Linha Crédito'],
+                "Nome Comercial": row['Nome Comercial'],
+                "Consignante": consignante,
+                "Empresa Consignante": empresa
+            })
 
-    base = df.merge(
-        tomb,
-        left_on=["Número CPF/CNPJ", "Número Contrato Crédito"],
-        right_on=["CPF Tomador", "Número Contrato"],
-        how="left"
-    )
-    base["CNPJ Empresa Consignante"] = base["CNPJ Empresa Consignante"].fillna("CONSULTE SISBR")
-    base["Empresa Consignante"] = base["Empresa Consignante"].fillna("CONSULTE SISBR")
-    base["Consulta Ativa"] = base["Número CPF/CNPJ"].isin(ativos)
-
-    resumo = base.groupby(["CNPJ Empresa Consignante", "Empresa Consignante"]).agg(
-        Total_Cooperados=("Número CPF/CNPJ", "nunique"),
-        Total_Contratos=("Número Contrato Crédito", "count"),
-        Total_Consulta_Ativa=("Consulta Ativa", "sum")
-    ).reset_index()
-    st.dataframe(resumo)
-
-    st.markdown("### 📥 Exportar Relação Analítica")
-    base["Consulta Ativa"] = base["Consulta Ativa"].apply(lambda x: "Sim" if x else "Não")
-    analitico = base[[
-        "Número CPF/CNPJ", "Nome Cliente", "Número Contrato Crédito", "Empresa Consignante",
-        "CNPJ Empresa Consignante", "Consulta Ativa"
-    ]]
-    csv = analitico.to_csv(index=False).encode("utf-8")
-    st.download_button("📥 Baixar Analítico CSV", csv, "relacao_analitica.csv", "text/csv")
-
-# ==== Atualizar Bases ====
-elif menu == "Atualizar Bases":
-    st.title("🔄 Atualizar Bases de Dados")
-    novo_file = st.file_uploader("📄 NovoEmprestimo.xlsx", type="xlsx")
-    tomb_file = st.file_uploader("📄 Tombamento.xlsx", type="xlsx")
-    if novo_file and tomb_file:
-        with open("NovoEmprestimo.xlsx", "wb") as f:
-            f.write(novo_file.getbuffer())
-        with open("Tombamento.xlsx", "wb") as f:
-            f.write(tomb_file.getbuffer())
-        st.success("✅ Bases atualizadas. Recarregue a página.")
-
-    if "cpf_em_analise" in st.session_state:
-        if st.session_state.cpf_em_analise not in st.session_state.cpfs_ativos:
-            if st.button("Marcar como Consulta Ativa"):
-                st.session_state.cpfs_ativos.append(st.session_state.cpf_em_analise)
-                with open(CPFS_ATIVOS_FILE, "w", encoding="utf-8") as f:
-                    json.dump(st.session_state.cpfs_ativos, f)
-                st.success("✅ CPF marcado com sucesso.")
+        st.dataframe(pd.DataFrame(resultados))
+else:
+    st.info("Insira um CPF válido com 11 dígitos.")
 
 
 
