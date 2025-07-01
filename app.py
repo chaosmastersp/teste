@@ -52,59 +52,14 @@ else:
         st.session_state.df = df
         st.session_state.tomb = tomb
         st.success("✅ Bases carregadas com sucesso.")
-        # 📌 Persistência dos CPFs marcados como 'Consulta Ativa'
+# 📌 Persistência dos CPFs marcados como 'Consulta Ativa'
 CPFS_ATIVOS_FILE = "consulta_ativa.json"
-if os.path.exists(CPFS_ATIVOS_FILE):
-    with open(CPFS_ATIVOS_FILE, "r") as f:
-        st.session_state.cpfs_ativos = json.load(f)
-else:
-    st.session_state.cpfs_ativos = []
-    else:
-        st.stop()
-
-
-# Carregar bases do estado
-df = st.session_state.df
-tomb = st.session_state.tomb
-
-# Lista de CPFs marcados como Consulta Ativa
 if "cpfs_ativos" not in st.session_state:
-    st.session_state.cpfs_ativos = []
-
-cpfs_ativos = st.session_state.cpfs_ativos
-
-if menu == "Consulta Individual":
-    st.title("🔎 Consulta de CPF")
-    cpf_input = st.text_input("Digite o CPF (somente números):")
-    if st.button("Consultar"):
-        cpf_input = cpf_input.strip().zfill(11)
-        resultados = df[
-            (df["Número CPF/CNPJ"] == cpf_input) &
-            (df["Submodalidade Bacen"] == "CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.") &
-            (df["Critério Débito"] == "FOLHA DE PAGAMENTO") &
-            (~df["Código Linha Crédito"].isin([140073, 138358, 141011]))
-        ]
-
-        if not resultados.empty:
-            resultados["Número Contrato Crédito"] = resultados["Número Contrato Crédito"].astype(str)
-            tomb["Número Contrato"] = tomb["Número Contrato"].astype(str)
-            merged = pd.merge(resultados, tomb, how="left",
-                              left_on=["Número CPF/CNPJ", "Número Contrato Crédito"],
-                              right_on=["CPF Tomador", "Número Contrato"])
-
-            st.dataframe(merged[[
-                "Número CPF/CNPJ", "Nome Cliente", "Número Contrato Crédito",
-                "Quantidade Parcelas Abertas", "% Taxa Operação", "Código Linha Crédito",
-                "Nome Comercial", "CNPJ Empresa Consignante", "Empresa Consignante"
-            ]])
-
-            if cpf_input not in cpfs_ativos:
-                if st.button("✅ Marcar como Consulta Ativa"):
-                    cpfs_ativos.append(cpf_input)
-                    with open(CPFS_ATIVOS_FILE, "w") as f:
-                        json.dump(cpfs_ativos, f)
-                    st.success("CPF marcado como Consulta Ativa.")
-        else:
+    if os.path.exists(CPFS_ATIVOS_FILE):
+        with open(CPFS_ATIVOS_FILE, "r") as f:
+            st.session_state.cpfs_ativos = json.load(f)
+    else:
+        st.session_state.cpfs_ativos = []
             st.warning("Nenhum contrato encontrado com os critérios informados.")
 
 if menu == "Registros de Consulta Ativa":
@@ -185,6 +140,7 @@ if menu == "Atualizar Bases":
         st.session_state.df = df
         st.session_state.tomb = tomb
         st.success("✅ Bases atualizadas com sucesso.")
+
 
 
 
