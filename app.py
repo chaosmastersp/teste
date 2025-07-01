@@ -197,43 +197,46 @@ if menu == "Registros Consulta Ativa":
 
 
 if menu == "Resumo":
-    st.title("📊 Resumo Consolidado por Consignante")
+    st.title("📊 Resumo Consolidado por Consignante (Base Completa)")
 
     df = st.session_state.novo_df
     tomb = st.session_state.tomb_df
 
-    resultados = []
+    registros = []
 
-    for cpf_input in cpfs_ativos:
-        filtrado = df[
-            (df['Número CPF/CNPJ'] == cpf_input) &
-            (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
-            (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
-            (~df['Código Linha Crédito'].isin([140073, 138358, 141011]))
+    for _, row in df.iterrows():
+        cpf = row['Número CPF/CNPJ']
+        contrato = str(row['Número Contrato Crédito'])
+
+        if row['Submodalidade Bacen'] != 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.':
+            continue
+        if row['Critério Débito'] != 'FOLHA DE PAGAMENTO':
+            continue
+        if row['Código Linha Crédito'] in [140073, 138358, 141011]:
+            continue
+
+        match = tomb[
+            (tomb['CPF Tomador'] == cpf) &
+            (tomb['Número Contrato'] == contrato)
         ]
 
-        for _, row in filtrado.iterrows():
-            contrato = str(row['Número Contrato Crédito'])
-            match = tomb[
-                (tomb['CPF Tomador'] == cpf_input) &
-                (tomb['Número Contrato'] == contrato)
-            ]
+        consignante = match['CNPJ Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
+        empresa = match['Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
 
-            consignante = match['CNPJ Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
-            empresa = match['Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
+        registros.append({
+            "CNPJ Empresa Consignante": consignante,
+            "Empresa Consignante": empresa,
+            "CPF": cpf,
+            "Consulta Ativa": cpf in cpfs_ativos
+        })
 
-            resultados.append({
-                "CNPJ Empresa Consignante": consignante,
-                "Empresa Consignante": empresa,
-                "CPF": cpf_input
-            })
+    if registros:
+        df_registros = pd.DataFrame(registros)
 
-    if resultados:
-        df_result = pd.DataFrame(resultados)
-        resumo = df_result.groupby(["CNPJ Empresa Consignante", "Empresa Consignante"]).agg(
+        resumo = df_registros.groupby(["CNPJ Empresa Consignante", "Empresa Consignante"]).agg(
             Total_Cooperados=("CPF", "nunique"),
             Total_Contratos=("CPF", "count"),
-            Total_Consulta_Ativa=("CPF", lambda x: x.isin(cpfs_ativos).sum())
+            Total_Consulta_Ativa=("Consulta Ativa", "sum")
         ).reset_index()
 
         st.dataframe(resumo)
@@ -242,16 +245,16 @@ if menu == "Resumo":
             import io
             with io.BytesIO() as buffer:
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    df_result.to_excel(writer, index=False, sheet_name="Consulta Ativa")
+                    df_registros.to_excel(writer, index=False, sheet_name="Relação Analítica")
                 buffer.seek(0)
                 st.download_button(
                     label="Exportar para Excel",
                     data=buffer,
-                    file_name="registros_consulta_ativa.xlsx",
+                    file_name="resumo_analitico.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
     else:
-        st.info("Nenhum dado encontrado para exibir no resumo.")
+        st.info("Nenhum dado encontrado na base para resumo.")
 
 
 
