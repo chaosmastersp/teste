@@ -54,13 +54,13 @@ else:
         st.success("✅ Bases carregadas com sucesso.")
 # 📌 Persistência dos CPFs marcados como 'Consulta Ativa'
 CPFS_ATIVOS_FILE = "consulta_ativa.json"
-if "cpfs_ativos" not in st.session_state:
+if "st.session_state.cpfs_ativos" not in st.session_state:
     if os.path.exists(CPFS_ATIVOS_FILE):
         with open(CPFS_ATIVOS_FILE, "r") as f:
-            st.session_state.cpfs_ativos = json.load(f)
+            st.session_state.st.session_state.cpfs_ativos = json.load(f)
     else:
-        st.session_state.cpfs_ativos = []
-        st.warning("Nenhum contrato encontrado com os critérios informados.")
+        st.session_state.st.session_state.cpfs_ativos = []
+    st.warning("Nenhum contrato encontrado com os critérios informados.")
 
 if menu == "Registros de Consulta Ativa":
     st.title("📌 Registros com Consulta Ativa")
@@ -75,7 +75,7 @@ if menu == "Registros de Consulta Ativa":
     merged = pd.merge(df_filtrado, tomb,
                       left_on=["Número CPF/CNPJ", "Número Contrato Crédito"],
                       right_on=["CPF Tomador", "Número Contrato"], how="left")
-    merged = merged[merged["Número CPF/CNPJ"].isin(cpfs_ativos)]
+    merged = merged[merged["Número CPF/CNPJ"].isin(st.session_state.cpfs_ativos)]
 
     if not merged.empty:
         st.dataframe(merged[[
@@ -102,7 +102,7 @@ if menu == "Resumo":
                       left_on=["Número CPF/CNPJ", "Número Contrato Crédito"],
                       right_on=["CPF Tomador", "Número Contrato"], how="left")
 
-    merged["Consulta Ativa"] = merged["Número CPF/CNPJ"].isin(cpfs_ativos)
+    merged["Consulta Ativa"] = merged["Número CPF/CNPJ"].isin(st.session_state.cpfs_ativos)
     merged["Consulta Ativa"] = merged["Consulta Ativa"].apply(lambda x: "Sim" if x else "Não")
 
     resumo = merged.groupby(["CNPJ Empresa Consignante", "Empresa Consignante"]).agg(
