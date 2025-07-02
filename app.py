@@ -154,6 +154,44 @@ def marcar_tombado(cpf, contrato):
     st.rerun()
 
 
+
+def marcar_todos_contratos_tombados(cpf):
+    consulta = client.open("consulta_ativa")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    target_cpf = str(cpf).strip().zfill(11)
+
+    # Pega planilha 'aguardando'
+    aguard_sheet = consulta.worksheet("aguardando")
+    all_values = aguard_sheet.get_all_values()
+    header = all_values[0]
+    data = all_values[1:]
+
+    # Filtra linhas do CPF escolhido
+    contratos_do_cpf = [row for row in data if str(row[0]).strip().zfill(11) == target_cpf]
+    outros = [row for row in data if str(row[0]).strip().zfill(11) != target_cpf]
+
+    # Atualiza a planilha 'aguardando'
+    aguard_sheet.clear()
+    aguard_sheet.append_row(header)
+    for row in outros:
+        aguard_sheet.append_row(row)
+
+    # Adiciona os registros à planilha 'tombados'
+    try:
+        tomb_sheet = consulta.worksheet("tombados")
+    except gspread.exceptions.WorksheetNotFound:
+        tomb_sheet = consulta.add_worksheet(title="tombados", rows="1000", cols="3")
+        tomb_sheet.append_row(["cpf", "contrato", "timestamp"])
+
+    for row in contratos_do_cpf:
+        contrato = str(row[1]).strip()
+        tomb_sheet.append_row([target_cpf, contrato, timestamp])
+
+    st.success(f"Todos os contratos do CPF {target_cpf} foram tombados.")
+    st.cache_data.clear()
+    st.rerun()
+
+
 def marcar_cpf_ativo(cpf):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     sheet = client.open("consulta_ativa").sheet1 # Get the sheet reference again
@@ -575,3 +613,4 @@ if not tombado_data.empty:
             st.info("Nenhum CPF disponível para seleção.")
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
+
