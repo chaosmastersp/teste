@@ -186,13 +186,6 @@ if menu == "Consulta Individual":
         else:
             st.warning("CPF inválido. Digite exatamente 11 números.")
 
-        else:
-            st.warning("CPF inválido. Digite exatamente 11 números.")
-
-
-
-
-
 
 
 if menu == "Registros Consulta Ativa":
