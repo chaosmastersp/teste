@@ -77,10 +77,11 @@ def marcar_tombado(cpf, contrato):
 
         new_data = [row for row in data if not (row[0] == cpf and row[1] == contrato)]
 
+        # Recria a planilha com header + dados válidos
+        values_to_update = [header] + new_data
         aguard_sheet.clear()
-        aguard_sheet.append_row(header)
-        for row in new_data:
-            aguard_sheet.append_row(row)
+        aguard_sheet.update("A1", values_to_update)
+
     except Exception as e:
         st.warning(f"Erro ao remover de 'aguardando': {e}")
 
