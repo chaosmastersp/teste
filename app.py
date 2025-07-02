@@ -170,6 +170,7 @@ if menu == "Consulta Individual":
 
         if cpf_validado and len(cpf_validado) == 11 and cpf_validado.isdigit():
             df = st.session_state.novo_df
+    total_tb = len(tombados)
             tomb = st.session_state.tomb_df
 
             filtrado = df[
@@ -220,7 +221,10 @@ if menu == "Consulta Individual":
 if menu == "Registros Consulta Ativa":
     st.title("📋 Registros de Consulta Ativa")
 
+    total_ca = 0
+
     df = st.session_state.novo_df
+    total_tb = len(tombados)
     tomb = st.session_state.tomb_df
 
     registros = []
@@ -259,7 +263,7 @@ if menu == "Registros Consulta Ativa":
             })
 
     if registros:
-        df_resultado = pd.DataFrame(registros)
+        st.warning(f"{total_tb} contratos tombados encontrados.")
         st.dataframe(df_resultado, use_container_width=True)
 
         cpfs_disponiveis = df_resultado['Número CPF/CNPJ'].unique().tolist()
@@ -280,6 +284,7 @@ if menu == "Resumo":
     st.title("📊 Resumo Consolidado por Consignante (Base Completa)")
 
     df = st.session_state.novo_df
+    total_tb = len(tombados)
     tomb = st.session_state.tomb_df
 
     registros = []
@@ -314,16 +319,7 @@ if menu == "Resumo":
         })
 
     if registros:
-        df_registros = pd.DataFrame(registros)
-
-        resumo = df_registros.groupby(["CNPJ Empresa Consignante", "Empresa Consignante"]).agg(
-            Total_Cooperados=("CPF", "nunique"),
-            Total_Contratos=("Contrato", "count"),
-            Total_Consulta_Ativa=("Consulta Ativa", "sum"),
-            Total_Tombado=("Tombado", "sum"),
-            Total_Aguardando_Conclusao=("Aguardando", "sum")
-        ).reset_index()
-
+        st.warning(f"{total_tb} contratos tombados encontrados.")
         st.dataframe(resumo)
 
         with st.expander("📥 Exportar relação analítica"):
@@ -346,6 +342,7 @@ if menu == "Inconsistências":
     st.title("🚨 Contratos sem Correspondência no Tombamento")
 
     df = st.session_state.novo_df
+    total_tb = len(tombados)
     tomb = st.session_state.tomb_df
 
     df['Número CPF/CNPJ'] = df['Número CPF/CNPJ'].astype(str).str.replace(r'\D', '', regex=True).str.zfill(11)
@@ -393,7 +390,10 @@ if menu == "Inconsistências":
 if menu == "Aguardando Conclusão":
     st.title("⏳ Registros Aguardando Conclusão")
 
+    total_ag = 0
+
     df = st.session_state.novo_df
+    total_tb = len(tombados)
     tomb = st.session_state.tomb_df
 
     registros = []
@@ -425,7 +425,7 @@ if menu == "Aguardando Conclusão":
             })
 
     if registros:
-        df_resultado = pd.DataFrame(registros)
+        st.warning(f"{total_tb} contratos tombados encontrados.")
         st.dataframe(df_resultado, use_container_width=True)
 
         cpfs_disponiveis = df_resultado['Número CPF/CNPJ'].unique().tolist()
@@ -444,7 +444,10 @@ if menu == "Aguardando Conclusão":
 if menu == "Tombado":
     st.title("📁 Registros Tombados")
 
+    total_tb = 0
+
     df = st.session_state.novo_df
+    total_tb = len(tombados)
     tomb = st.session_state.tomb_df
 
     registros = []
@@ -475,6 +478,7 @@ if menu == "Tombado":
             })
 
     if registros:
+        st.warning(f"{total_tb} contratos tombados encontrados.")
         st.dataframe(pd.DataFrame(registros))
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
