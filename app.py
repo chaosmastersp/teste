@@ -216,13 +216,13 @@ if menu == "Consulta Individual":
                         st.rerun()
         else:
             st.warning("CPF inválido. Digite exatamente 11 números.")
+
+
+
 if menu == "Registros Consulta Ativa":
     st.title("📋 Registros de Consulta Ativa")
 
-    total_ca = 0
-
     df = st.session_state.novo_df
-    total_tb = len(tombados)
     tomb = st.session_state.tomb_df
 
     registros = []
@@ -261,7 +261,9 @@ if menu == "Registros Consulta Ativa":
             })
 
     if registros:
-        st.warning(f"{total_tb} contratos tombados encontrados.")
+        df_resultado = pd.DataFrame(registros)
+        total_ca = len(df_resultado)
+        st.warning(f"{total_ca} contratos marcados como Consulta Ativa encontrados.")
         st.dataframe(df_resultado, use_container_width=True)
 
         cpfs_disponiveis = df_resultado['Número CPF/CNPJ'].unique().tolist()
@@ -277,111 +279,6 @@ if menu == "Registros Consulta Ativa":
         st.info("Nenhum registro disponível para Consulta Ativa.")
 
 
-
-if menu == "Resumo":
-    st.title("📊 Resumo Consolidado por Consignante (Base Completa)")
-
-    df = st.session_state.novo_df
-    total_tb = len(tombados)
-    tomb = st.session_state.tomb_df
-
-    registros = []
-
-    for _, row in df.iterrows():
-        cpf = row['Número CPF/CNPJ']
-        contrato = str(row['Número Contrato Crédito'])
-
-        if row['Submodalidade Bacen'] != 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.':
-            continue
-        if row['Critério Débito'] != 'FOLHA DE PAGAMENTO':
-            continue
-        if row['Código Linha Crédito'] in [140073, 138358, 141011, 101014, 137510]:
-            continue
-
-        match = tomb[
-            (tomb['CPF Tomador'] == cpf) &
-            (tomb['Número Contrato'] == contrato)
-        ]
-
-        consignante = match['CNPJ Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
-        empresa = match['Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
-
-        registros.append({
-            "CNPJ Empresa Consignante": consignante,
-            "Empresa Consignante": empresa,
-            "CPF": cpf,
-            "Contrato": contrato,
-            "Consulta Ativa": cpf in cpfs_ativos,
-            "Tombado": (cpf, contrato) in tombados,
-            "Aguardando": (cpf, contrato) in aguardando
-        })
-
-    if registros:
-        st.warning(f"{total_tb} contratos tombados encontrados.")
-        st.dataframe(resumo)
-
-        with st.expander("📥 Exportar relação analítica"):
-            import io
-            with io.BytesIO() as buffer:
-                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    df_registros.to_excel(writer, index=False, sheet_name="Relação Analítica")
-                buffer.seek(0)
-                st.download_button(
-                    label="Exportar para Excel",
-                    data=buffer,
-                    file_name="resumo_analitico.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-    else:
-        st.info("Nenhum dado encontrado na base para resumo.")
-
-
-if menu == "Inconsistências":
-    st.title("🚨 Contratos sem Correspondência no Tombamento")
-
-    df = st.session_state.novo_df
-    total_tb = len(tombados)
-    tomb = st.session_state.tomb_df
-
-    df['Número CPF/CNPJ'] = df['Número CPF/CNPJ'].astype(str).str.replace(r'\D', '', regex=True).str.zfill(11)
-    tomb['CPF Tomador'] = tomb['CPF Tomador'].astype(str).str.replace(r'\D', '', regex=True).str.zfill(11)
-    tomb['Número Contrato'] = tomb['Número Contrato'].astype(str)
-
-    filtrado = df[
-        (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
-        (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
-        (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 101014, 137510]))
-    ].copy()
-
-    filtrado['Origem'] = filtrado.apply(
-        lambda row: "TOMBAMENTO" if not tomb[
-            (tomb['CPF Tomador'] == row['Número CPF/CNPJ']) &
-            (tomb['Número Contrato'] == str(row['Número Contrato Crédito']))
-        ].empty else "CONSULTE SISBR", axis=1
-    )
-
-    inconsistencias = filtrado[filtrado['Origem'] == 'CONSULTE SISBR'][
-        ['Número CPF/CNPJ', 'Número Contrato Crédito', 'Código Linha Crédito', 'Nome Cliente']
-    ]
-
-    if inconsistencias.empty:
-        st.success("Nenhuma inconsistência encontrada.")
-    else:
-        st.warning(f"{len(inconsistencias)} contratos sem correspondência no tombamento encontrados.")
-        st.dataframe(inconsistencias)
-
-        with st.expander("📥 Exportar inconsistências"):
-            import io
-            with io.BytesIO() as buffer:
-                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    inconsistencias.to_excel(writer, index=False, sheet_name="Inconsistencias")
-                buffer.seek(0)
-                st.download_button(
-                    label="Exportar para Excel",
-                    data=buffer,
-                    file_name="inconsistencias_tombamento.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
 if menu == "Aguardando Conclusão":
     st.title("⏳ Registros Aguardando Conclusão")
 
@@ -434,6 +331,8 @@ if menu == "Aguardando Conclusão":
             st.rerun()
     else:
         st.info("Nenhum registro marcado como Lançado Sisbr encontrado.")
+
+
 if menu == "Tombado":
     st.title("📁 Registros Tombados")
 
