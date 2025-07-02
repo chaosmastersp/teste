@@ -171,7 +171,7 @@ def marcar_todos_contratos_tombados(cpf):
         header = all_values[0]
         data = all_values[1:]
 
-        # Filtra os contratos do CPF
+        # Força normalização dos dados lidos
         novos_dados = []
         contratos_do_cpf = []
 
@@ -181,9 +181,9 @@ def marcar_todos_contratos_tombados(cpf):
             if row_cpf == target_cpf:
                 contratos_do_cpf.append((row_cpf, row_contrato))
             else:
-                novos_dados.append(row)
+                novos_dados.append([row_cpf, row_contrato, row[2] if len(row) > 2 else ""])
 
-        # Atualiza a planilha 'aguardando'
+        # Atualiza planilha aguardando com os dados restantes
         aguard_sheet.update("A1", [header] + novos_dados)
 
         # Acessa (ou cria) planilha 'tombados'
@@ -200,6 +200,10 @@ def marcar_todos_contratos_tombados(cpf):
         st.success(f"{len(contratos_do_cpf)} contrato(s) do CPF {target_cpf} foram tombados.")
         st.cache_data.clear()
         st.rerun()
+
+    except Exception as e:
+        st.error(f"Erro ao tombar contratos do CPF {cpf}: {e}")
+        st.exception(e)
 
     except Exception as e:
         st.error(f"Erro ao tombar contratos do CPF {cpf}: {e}")
