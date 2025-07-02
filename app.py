@@ -189,8 +189,63 @@ if menu == "Consulta Individual":
 
 
 
+
 if menu == "Registros Consulta Ativa":
-    
+    st.title("📋 Registros de Consulta Ativa")
+
+    df = st.session_state.novo_df
+    tomb = st.session_state.tomb_df
+
+    cpf_input = st.text_input("Informe o CPF para visualizar os contratos:", key="cpf_registro").strip()
+
+    if cpf_input and len(cpf_input) == 11 and cpf_input.isdigit():
+        filtrado = df[
+            (df['Número CPF/CNPJ'] == cpf_input) &
+            (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
+            (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
+            (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 101014, 137510]))
+        ]
+
+        registros = []
+        for _, row in filtrado.iterrows():
+            contrato = str(row['Número Contrato Crédito'])
+            if (cpf_input, contrato) in tombados:
+                continue
+
+            match = tomb[
+                (tomb['CPF Tomador'] == cpf_input) &
+                (tomb['Número Contrato'] == contrato)
+            ]
+            consignante = match['CNPJ Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
+            empresa = match['Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
+
+            registros.append({
+                "Número Contrato Crédito": contrato,
+                "Nome Cliente": row['Nome Cliente'],
+                "Quantidade Parcelas Abertas": row['Quantidade Parcelas Abertas'],
+                "% Taxa Operação": row['% Taxa Operação'],
+                "Código Linha Crédito": row['Código Linha Crédito'],
+                "Nome Comercial": row['Nome Comercial'],
+                "Consignante": consignante,
+                "Empresa Consignante": empresa
+            })
+
+        if registros:
+            df_resultado = pd.DataFrame(registros)
+            st.dataframe(df_resultado, use_container_width=True)
+
+            contratos_disponiveis = df_resultado['Número Contrato Crédito'].tolist()
+            contratos_selecionados = st.multiselect("Selecione os contratos que deseja tombar:", contratos_disponiveis)
+
+            if st.button("Tombar contratos selecionados"):
+                for contrato in contratos_selecionados:
+                    marcar_tombado(cpf_input, contrato)
+                st.success("Contratos tombados com sucesso.")
+                st.rerun()
+        else:
+            st.info("Nenhum contrato disponível para tombamento para este CPF.")
+    elif cpf_input:
+        st.warning("CPF inválido. Digite exatamente 11 números.")
 
 
 if menu == "Resumo":
@@ -342,3 +397,4 @@ if menu == "Tombado":
         st.dataframe(pd.DataFrame(registros))
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
+
