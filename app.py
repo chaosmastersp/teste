@@ -387,6 +387,58 @@ if menu == "Inconsistências":
                 )
 
 
+
+if menu == "Aguardando Conclusão":
+    st.title("⏳ Registros Aguardando Conclusão")
+
+    df = st.session_state.novo_df
+    tomb = st.session_state.tomb_df
+
+    registros = []
+
+    for cpf_input, contrato in aguardando:
+        match_df = df[
+            (df['Número CPF/CNPJ'] == cpf_input) &
+            (df['Número Contrato Crédito'].astype(str) == contrato)
+        ]
+
+        for _, row in match_df.iterrows():
+            match = tomb[
+                (tomb['CPF Tomador'] == cpf_input) &
+                (tomb['Número Contrato'] == contrato)
+            ]
+            consignante = match['CNPJ Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
+            empresa = match['Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
+
+            registros.append({
+                "Número CPF/CNPJ": row['Número CPF/CNPJ'],
+                "Nome Cliente": row['Nome Cliente'],
+                "Número Contrato Crédito": contrato,
+                "Quantidade Parcelas Abertas": row['Quantidade Parcelas Abertas'],
+                "% Taxa Operação": row['% Taxa Operação'],
+                "Código Linha Crédito": row['Código Linha Crédito'],
+                "Nome Comercial": row['Nome Comercial'],
+                "Consignante": consignante,
+                "Empresa Consignante": empresa
+            })
+
+    if registros:
+        df_resultado = pd.DataFrame(registros)
+        st.dataframe(df_resultado, use_container_width=True)
+
+        cpfs_disponiveis = df_resultado['Número CPF/CNPJ'].unique().tolist()
+        cpf_escolhido = st.selectbox("Selecione o CPF para tombar os contratos:", cpfs_disponiveis)
+
+        if st.button("Marcar todos os contratos como Tombado"):
+            contratos = df_resultado[df_resultado['Número CPF/CNPJ'] == cpf_escolhido]['Número Contrato Crédito'].astype(str).tolist()
+            for contrato in contratos:
+                marcar_tombado(cpf_escolhido, contrato)
+            st.success(f"Todos os contratos do CPF {cpf_escolhido} foram tombados com sucesso.")
+            st.rerun()
+    else:
+        st.info("Nenhum registro marcado como Lançado Sisbr encontrado.")
+
+
 if menu == "Tombado":
     st.title("📁 Registros Tombados")
 
@@ -424,3 +476,4 @@ if menu == "Tombado":
         st.dataframe(pd.DataFrame(registros))
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
+
