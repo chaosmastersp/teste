@@ -188,62 +188,10 @@ if menu == "Consulta Individual":
 
 
 
+
 if menu == "Registros Consulta Ativa":
-    st.title("📋 Registros de Consulta Ativa")
+    
 
-    df = st.session_state.novo_df
-    tomb = st.session_state.tomb_df
-
-    registros = []
-
-    for cpf_input in cpfs_ativos:
-        filtrado = df[
-            (df['Número CPF/CNPJ'] == cpf_input) &
-            (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
-            (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
-            (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 101014, 137510]))
-        ]
-
-        for _, row in filtrado.iterrows():
-            contrato = str(row['Número Contrato Crédito'])
-            if (cpf_input, contrato) in tombados:
-                continue
-
-            match = tomb[
-                (tomb['CPF Tomador'] == cpf_input) &
-                (tomb['Número Contrato'] == contrato)
-            ]
-
-            consignante = match['CNPJ Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
-            empresa = match['Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
-
-            registros.append({
-                "Número CPF/CNPJ": row['Número CPF/CNPJ'],
-                "Nome Cliente": row['Nome Cliente'],
-                "Número Contrato Crédito": contrato,
-                "Quantidade Parcelas Abertas": row['Quantidade Parcelas Abertas'],
-                "% Taxa Operação": row['% Taxa Operação'],
-                "Código Linha Crédito": row['Código Linha Crédito'],
-                "Nome Comercial": row['Nome Comercial'],
-                "Consignante": consignante,
-                "Empresa Consignante": empresa
-            })
-
-    if registros:
-        df_resultado = pd.DataFrame(registros)
-        st.dataframe(df_resultado, use_container_width=True)
-
-        cpfs_disponiveis = df_resultado['Número CPF/CNPJ'].unique().tolist()
-        cpf_escolhido = st.selectbox("Selecione o CPF para tombar todos os contratos associados:", cpfs_disponiveis)
-
-        if st.button("Marcar todos os contratos como Tombado"):
-            contratos = df_resultado[df_resultado['Número CPF/CNPJ'] == cpf_escolhido]['Número Contrato Crédito'].astype(str).tolist()
-            for contrato in contratos:
-                marcar_tombado(cpf_escolhido, contrato)
-            st.success(f"Todos os contratos do CPF {cpf_escolhido} foram tombados com sucesso.")
-            st.rerun()
-    else:
-        st.info("Nenhum registro encontrado para os CPFs marcados como Consulta Ativa.")
 
 if menu == "Resumo":
     st.title("📊 Resumo Consolidado por Consignante (Base Completa)")
