@@ -216,8 +216,6 @@ if menu == "Consulta Individual":
                         st.rerun()
         else:
             st.warning("CPF inválido. Digite exatamente 11 números.")
-
-
 if menu == "Registros Consulta Ativa":
     st.title("📋 Registros de Consulta Ativa")
 
@@ -384,9 +382,6 @@ if menu == "Inconsistências":
                     file_name="inconsistencias_tombamento.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
-
-
-
 if menu == "Aguardando Conclusão":
     st.title("⏳ Registros Aguardando Conclusão")
 
@@ -439,8 +434,6 @@ if menu == "Aguardando Conclusão":
             st.rerun()
     else:
         st.info("Nenhum registro marcado como Lançado Sisbr encontrado.")
-
-
 if menu == "Tombado":
     st.title("📁 Registros Tombados")
 
