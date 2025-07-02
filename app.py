@@ -630,11 +630,10 @@ if "Aguardando Conclusão" in menu:
         st.info("Nenhum registro encontrado.")
 
 
-# Este bloco 'if' estava desalinhado, causando o IndentationError.
-# Ele deve estar no mesmo nível de indentação dos outros blocos 'if menu == ...'
-# ou 'if "Aguardando Conclusão" in menu:'.
-# A correção é garantir que ele não esteja aninhado incorretamente.
-if "Tombado" in menu: # Adicionei esta condição para o bloco "Tombado"
+# --- INÍCIO DA CORREÇÃO DE INDENTAÇÃO ---
+# Este bloco 'if "Tombado" in menu:' e seu 'else' estavam desalinhados.
+# Agora, o 'else' está corretamente aninhado ao 'if not tombado_data.empty:'.
+if "Tombado" in menu:
     st.title(f"✅ Registros Tombados ({num_tombado})")
     if not tombado_data.empty:
         # Merge with tomb for consignante info for display
@@ -668,4 +667,4 @@ if "Tombado" in menu: # Adicionei esta condição para o bloco "Tombado"
             st.info("Nenhum CPF disponível para seleção.")
     else: # Este 'else' agora está corretamente alinhado com o 'if not tombado_data.empty:'
         st.info("Nenhum contrato marcado como tombado encontrado.")
-
+# --- FIM DA CORREÇÃO DE INDENTAÇÃO ---
