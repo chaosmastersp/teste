@@ -304,52 +304,25 @@ if "Registros Consulta Ativa" in menu:
             (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
             (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 101014, 137510]))
         ]
-
         for _, row in filtrado.iterrows():
             contrato = str(row['Número Contrato Crédito'])
             if (cpf_input, contrato) in tombados or (cpf_input, contrato) in aguardando:
                 continue
-
-            match = tomb[
-                (tomb['CPF Tomador'] == cpf_input) &
-                (tomb['Número Contrato'] == contrato)
-            ]
-
-            consignante = match['CNPJ Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
-            empresa = match['Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
-
-            registros.append({
-                "Número CPF/CNPJ": row['Número CPF/CNPJ'],
-                "Nome Cliente": row['Nome Cliente'],
-                "Número Contrato Crédito": contrato,
-                "Quantidade Parcelas Abertas": row['Quantidade Parcelas Abertas'],
-                "% Taxa Operação": row['% Taxa Operação'],
-                "Código Linha Crédito": row['Código Linha Crédito'],
-                "Nome Comercial": row['Nome Comercial'],
-                "Consignante": consignante,
-                "Empresa Consignante": empresa
-            })
+            registros.append(row)
 
     if registros:
         df_resultado = pd.DataFrame(registros)
         st.dataframe(df_resultado, use_container_width=True)
 
-        cpfs_disponiveis = df_resultado['Número CPF/CNPJ'].unique().tolist()
-        if cpfs_disponiveis:
-            cpf_escolhido = st.selectbox("Selecione o CPF para marcar:", cpfs_disponiveis, key="select_cpf_consulta_ativa")
+        cpf_escolhido = st.selectbox("Selecione o CPF:", df_resultado['Número CPF/CNPJ'].unique(), key="cpf_ca")
 
-            contratos_disponiveis = df_resultado[df_resultado['Número CPF/CNPJ'] == cpf_escolhido]['Número Contrato Crédito'].astype(str).tolist()
-            if contratos_disponiveis:
-                contrato_escolhido = st.selectbox("Selecione o Contrato para marcar como Lançado Sisbr:", contratos_disponiveis, key="select_contrato_consulta_ativa")
+        contratos = df_resultado[df_resultado['Número CPF/CNPJ'] == cpf_escolhido]['Número Contrato Crédito'].astype(str).tolist()
+        contrato_escolhido = st.selectbox("Selecione o Contrato:", contratos, key="contrato_ca")
 
-                if st.button("Marcar como Lançado Sisbr"):
-                    marcar_aguardando(cpf_escolhido, contrato_escolhido)
-                    st.success(f"Contrato {contrato_escolhido} do CPF {cpf_escolhido} foi movido para 'Aguardando Conclusão'.")
-                    st.rerun()
-            else:
-                st.info("Nenhum contrato disponível para o CPF selecionado.")
-        else:
-            st.info("Nenhum CPF disponível para seleção.")
+        if st.button("Marcar como Lançado Sisbr"):
+            marcar_aguardando(cpf_escolhido, contrato_escolhido)
+            st.success(f"Contrato {contrato_escolhido} do CPF {cpf_escolhido} foi movido para 'Aguardando Conclusão'.")
+            st.rerun()
     else:
         st.info("Nenhum registro disponível para Consulta Ativa.")
 
@@ -480,46 +453,21 @@ if "Aguardando Conclusão" in menu:
             (df['Número CPF/CNPJ'] == cpf_input) &
             (df['Número Contrato Crédito'].astype(str) == contrato)
         ]
-
-        for _, row in match_df.iterrows():
-            match = tomb[
-                (tomb['CPF Tomador'] == cpf_input) &
-                (tomb['Número Contrato'] == contrato)
-            ]
-            consignante = match['CNPJ Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
-            empresa = match['Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
-
-            registros.append({
-                "Número CPF/CNPJ": row['Número CPF/CNPJ'],
-                "Nome Cliente": row['Nome Cliente'],
-                "Número Contrato Crédito": contrato,
-                "Quantidade Parcelas Abertas": row['Quantidade Parcelas Abertas'],
-                "% Taxa Operação": row['% Taxa Operação'],
-                "Código Linha Crédito": row['Código Linha Crédito'],
-                "Nome Comercial": row['Nome Comercial'],
-                "Consignante": consignante,
-                "Empresa Consignante": empresa
-            })
+        registros.extend(match_df.to_dict("records"))
 
     if registros:
         df_resultado = pd.DataFrame(registros)
         st.dataframe(df_resultado, use_container_width=True)
 
-        cpfs_disponiveis = df_resultado['Número CPF/CNPJ'].unique().tolist()
-        cpf_escolhido = st.selectbox("Selecione o CPF:", cpfs_disponiveis, key="cpf_aguardando")
+        cpf_escolhido = st.selectbox("Selecione o CPF:", df_resultado['Número CPF/CNPJ'].unique(), key="cpf_ag")
 
-        if cpf_escolhido:
-            contratos_do_cpf = df_resultado[df_resultado['Número CPF/CNPJ'] == cpf_escolhido]['Número Contrato Crédito'].astype(str).tolist()
+        contratos = df_resultado[df_resultado['Número CPF/CNPJ'] == cpf_escolhido]['Número Contrato Crédito'].astype(str).tolist()
+        contrato_escolhido = st.selectbox("Selecione o Contrato:", contratos, key="contrato_ag")
 
-            if contratos_do_cpf:
-                contrato_escolhido = st.selectbox("Selecione o Contrato para tombar:", contratos_do_cpf, key="contrato_aguardando")
-
-                if st.button("Marcar como Tombado"):
-                    marcar_tombado(cpf_escolhido, contrato_escolhido)
-                    st.success(f"Contrato {contrato_escolhido} do CPF {cpf_escolhido} foi tombado com sucesso.")
-                    st.rerun()
-            else:
-                st.warning("Nenhum contrato disponível para o CPF selecionado.")
+        if st.button("Marcar como Tombado"):
+            marcar_tombado(cpf_escolhido, contrato_escolhido)
+            st.success(f"Contrato {contrato_escolhido} do CPF {cpf_escolhido} foi tombado com sucesso.")
+            st.rerun()
     else:
         st.info("Nenhum registro marcado como 'Aguardando Conclusão' encontrado.")
 
@@ -576,4 +524,3 @@ if "Tombado" in menu:
 
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
-
