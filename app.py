@@ -335,19 +335,23 @@ if "Registros Consulta Ativa" in menu:
         st.dataframe(df_resultado, use_container_width=True)
 
         cpfs_disponiveis_ca = df_resultado['Número CPF/CNPJ'].unique().tolist()
+        cpfs_disponiveis_ca.insert(0, "Selecione um CPF") # Adiciona opção vazia
         cpf_escolhido_ca = st.selectbox("Selecione o CPF:", cpfs_disponiveis_ca, key="cpf_ca")
 
-        if cpf_escolhido_ca:
+        if cpf_escolhido_ca and cpf_escolhido_ca != "Selecione um CPF":
             contratos_disponiveis_ca = df_resultado[df_resultado['Número CPF/CNPJ'] == cpf_escolhido_ca]['Número Contrato Crédito'].astype(str).tolist()
+            contratos_disponiveis_ca.insert(0, "Selecione um Contrato") # Adiciona opção vazia
             contrato_escolhido_ca = st.selectbox("Selecione o Contrato para marcar como Lançado Sisbr:", contratos_disponiveis_ca, key="contrato_ca")
 
             if st.button("Marcar como Lançado Sisbr"):
-                if contrato_escolhido_ca:
+                if contrato_escolhido_ca and contrato_escolhido_ca != "Selecione um Contrato":
                     marcar_aguardando(cpf_escolhido_ca, contrato_escolhido_ca)
                     st.success(f"Contrato {contrato_escolhido_ca} do CPF {cpf_escolhido_ca} movido para 'Aguardando Conclusão'.")
                     st.rerun()
                 else:
-                    st.warning("Selecione um contrato para marcar.")
+                    st.warning("Selecione um contrato válido para marcar.")
+        elif cpf_escolhido_ca == "Selecione um CPF":
+            st.info("Por favor, selecione um CPF para ver os contratos disponíveis.")
     else:
         st.info("Nenhum registro disponível para Consulta Ativa.")
 
@@ -504,19 +508,23 @@ if "Aguardando Conclusão" in menu:
         st.dataframe(df_resultado, use_container_width=True)
 
         cpfs_disponiveis_aguardando = df_resultado['Número CPF/CNPJ'].unique().tolist()
+        cpfs_disponiveis_aguardando.insert(0, "Selecione um CPF") # Adiciona opção vazia
         cpf_escolhido_aguardando = st.selectbox("Selecione o CPF:", cpfs_disponiveis_aguardando, key="cpf_aguardando")
 
-        if cpf_escolhido_aguardando:
+        if cpf_escolhido_aguardando and cpf_escolhido_aguardando != "Selecione um CPF":
             contratos_disponiveis_aguardando = df_resultado[df_resultado['Número CPF/CNPJ'] == cpf_escolhido_aguardando]['Número Contrato Crédito'].astype(str).tolist()
+            contratos_disponiveis_aguardando.insert(0, "Selecione um Contrato") # Adiciona opção vazia
             contrato_escolhido_aguardando = st.selectbox("Selecione o Contrato para tombar:", contratos_disponiveis_aguardando, key="contrato_aguardando")
 
             if st.button("Marcar como Tombado"):
-                if contrato_escolhido_aguardando:
+                if contrato_escolhido_aguardando and contrato_escolhido_aguardando != "Selecione um Contrato":
                     marcar_tombado(cpf_escolhido_aguardando, contrato_escolhido_aguardando)
                     st.success(f"Contrato {contrato_escolhido_aguardando} do CPF {cpf_escolhido_aguardando} tombado com sucesso.")
                     st.rerun()
                 else:
-                    st.warning("Selecione um contrato para tombar.")
+                    st.warning("Selecione um contrato válido para tombar.")
+        elif cpf_escolhido_aguardando == "Selecione um CPF":
+            st.info("Por favor, selecione um CPF para ver os contratos disponíveis.")
     else:
         st.info("Nenhum registro marcado como Lançado Sisbr encontrado.")
 
@@ -558,5 +566,6 @@ if "Tombado" in menu:
         st.dataframe(pd.DataFrame(registros))
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
+
 
 
