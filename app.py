@@ -161,50 +161,49 @@ def marcar_todos_contratos_tombados(cpf):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         target_cpf = str(cpf).strip().zfill(11)
 
-        # Abrir planilha aguardando
+        # Acessa planilha aguardando
         aguard_sheet = consulta.worksheet("aguardando")
         all_values = aguard_sheet.get_all_values()
         if not all_values or len(all_values) < 2:
-            st.warning("Planilha 'aguardando' vazia ou sem dados.")
+            st.warning("Planilha 'aguardando' está vazia ou sem dados.")
             return
 
         header = all_values[0]
         data = all_values[1:]
 
+        # Filtra os contratos do CPF
         novos_dados = []
-        contratos_para_tombar = []
+        contratos_do_cpf = []
 
         for row in data:
             row_cpf = str(row[0]).strip().zfill(11)
             row_contrato = str(row[1]).strip()
             if row_cpf == target_cpf:
-                contratos_para_tombar.append((row_cpf, row_contrato))
+                contratos_do_cpf.append((row_cpf, row_contrato))
             else:
                 novos_dados.append(row)
 
-        if not contratos_para_tombar:
-            st.warning("Nenhum contrato encontrado para esse CPF na planilha 'aguardando'.")
-            return
-
-        # Atualiza planilha aguardando com os dados restantes
-        aguard_sheet.clear()
+        # Atualiza a planilha 'aguardando'
         aguard_sheet.update("A1", [header] + novos_dados)
 
-        # Atualiza planilha tombados
+        # Acessa (ou cria) planilha 'tombados'
         try:
             tomb_sheet = consulta.worksheet("tombados")
         except gspread.exceptions.WorksheetNotFound:
             tomb_sheet = consulta.add_worksheet(title="tombados", rows="1000", cols="3")
             tomb_sheet.append_row(["cpf", "contrato", "timestamp"])
 
-        for cpf_row, contrato_row in contratos_para_tombar:
+        # Adiciona os contratos tombados
+        for cpf_row, contrato_row in contratos_do_cpf:
             tomb_sheet.append_row([cpf_row, contrato_row, timestamp])
 
-        st.success(f"{len(contratos_para_tombar)} contrato(s) do CPF {target_cpf} foram tombados.")
+        st.success(f"{len(contratos_do_cpf)} contrato(s) do CPF {target_cpf} foram tombados.")
         st.cache_data.clear()
-        st.session_state['aguardando_set'] = carregar_aguardando_google()
-        st.session_state['tombados_set'] = carregar_tombados_google()
         st.rerun()
+
+    except Exception as e:
+        st.error(f"Erro ao tombar contratos do CPF {cpf}: {e}")
+        st.exception(e)
 
     except Exception as e:
         st.error(f"Erro ao tombar contratos do CPF {cpf}: {e}")
