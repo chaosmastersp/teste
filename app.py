@@ -80,13 +80,24 @@ def marcar_tombado(cpf, contrato):
         # Recria a planilha com header + dados válidos
         values_to_update = [header] + new_data
         aguard_sheet.clear()
-        aguard_sheet.update("A1", values_to_update)
+        # Use update(range_name, values) para garantir que a planilha seja reescrita corretamente
+        if values_to_update: # Only update if there's data to avoid API errors with empty list
+            aguard_sheet.update("A1", values_to_update)
+        else: # If no data left, just clear it and put header if needed (optional)
+            aguard_sheet.clear()
+            aguard_sheet.append_row(header) # Keep header if no data is left
+            
 
     except Exception as e:
         st.warning(f"Erro ao remover de 'aguardando': {e}")
 
-    st.cache_data.clear()
-    st.session_state['aguardando_set'] = carregar_aguardando_google()  # Limpa cache das planilhas
+    # Invalidate specific caches related to data modification
+    st.cache_data.clear() # Limpa todos os caches de @st.cache_data
+    # Força a atualização dos sets no session_state para refletir as mudanças imediatamente
+    # Isso é importante porque os valores de num_aguardando e num_tombado dependem desses sets
+    st.session_state['aguardando_set'] = carregar_aguardando_google()
+    st.session_state['tombados_set'] = carregar_tombados_google() # Atualiza também os tombados
+    st.rerun() # Força a reexecução do script para que as contagens sejam atualizadas imediatamente
 
 
 def marcar_cpf_ativo(cpf):
@@ -94,6 +105,8 @@ def marcar_cpf_ativo(cpf):
     sheet = client.open("consulta_ativa").sheet1 # Get the sheet reference again
     sheet.append_row([cpf, timestamp])
     st.cache_data.clear() # Invalidate cache for active CPFs
+    st.rerun() # Força a reexecução para atualizar a contagem
+
 
 def marcar_aguardando(cpf, contrato):
     try:
@@ -104,11 +117,20 @@ def marcar_aguardando(cpf, contrato):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     aguard_sheet.append_row([cpf, contrato, timestamp])
     st.cache_data.clear() # Invalidate cache for aguardando data
+    st.session_state['aguardando_set'] = carregar_aguardando_google() # Atualiza o set no session_state
+    st.rerun() # Força a reexecução para atualizar a contagem
 
 # Initialize session state variables
-for key in ["autenticado", "arquivo_novo", "arquivo_tomb", "novo_df", "tomb_df", "ultimo_cpf_consultado"]:
+for key in ["autenticado", "arquivo_novo", "arquivo_tomb", "novo_df", "tomb_df", "ultimo_cpf_consultado", "aguardando_set", "tombados_set"]:
     if key not in st.session_state:
-        st.session_state[key] = None if key not in ["autenticado", "novo_df", "tomb_df"] else False if key == "autenticado" else pd.DataFrame()
+        if key == "autenticado":
+            st.session_state[key] = False
+        elif key in ["novo_df", "tomb_df"]:
+            st.session_state[key] = pd.DataFrame()
+        elif key in ["aguardando_set", "tombados_set"]: # Initialize these sets
+            st.session_state[key] = set()
+        else:
+            st.session_state[key] = None
 
 DATA_DIR = "data"
 NOVO_PATH = os.path.join(DATA_DIR, "novoemprestimo.xlsx")
@@ -122,6 +144,7 @@ def autenticar():
     if senha == "tombamento":
         st.session_state.autenticado = True
         st.success("Acesso autorizado.")
+        st.rerun() # Rerun immediately after authentication
     elif senha:
         st.error("Senha incorreta.")
 
@@ -158,7 +181,9 @@ def salvar_arquivos(upload_novo, upload_tomb):
     st.cache_data.clear() # Clears all @st.cache_data caches
     # Re-load processed data into session state
     st.session_state.novo_df, st.session_state.tomb_df = load_and_process_data(NOVO_PATH, TOMB_PATH)
-
+    # Recarregar os sets do Google Sheets após salvar novos arquivos, caso eles afetem esses dados
+    st.session_state['aguardando_set'] = carregar_aguardando_google()
+    st.session_state['tombados_set'] = carregar_tombados_google()
 
 # --- Data Loading and Pre-processing (Centralized and Cached) ---
 if not os.path.exists(NOVO_PATH) or not os.path.exists(TOMB_PATH):
@@ -168,21 +193,29 @@ if not os.path.exists(NOVO_PATH) or not os.path.exists(TOMB_PATH):
     if arquivo_novo and arquivo_tomb:
         salvar_arquivos(arquivo_novo, arquivo_tomb)
         st.success("Bases carregadas com sucesso.")
-        st.cache_data.clear()
-st.rerun()
+        st.cache_data.clear() # Já é chamado dentro de salvar_arquivos
+        st.rerun() # Rerun after files are loaded and processed
     else:
         st.stop()
 else:
     # Load data once and store in session state
     if st.session_state.novo_df.empty or st.session_state.tomb_df.empty:
         st.session_state.novo_df, st.session_state.tomb_df = load_and_process_data(NOVO_PATH, TOMB_PATH)
+    
+    # Certifique-se de que os sets de Google Sheets estejam carregados na sessão
+    if not st.session_state.aguardando_set:
+        st.session_state.aguardando_set = carregar_aguardando_google()
+    if not st.session_state.tombados_set:
+        st.session_state.tombados_set = carregar_tombados_google()
+
 
 # Retrieve data for calculations and display
 df = st.session_state.novo_df
 tomb = st.session_state.tomb_df
 cpfs_ativos = carregar_cpfs_ativos()
-tombados = carregar_tombados_google()
-aguardando = carregar_aguardando_google()
+tombados = st.session_state.tombados_set # Usar o set do session_state
+aguardando = st.session_state.aguardando_set # Usar o set do session_state
+
 
 # Filter initial DataFrame once for common conditions
 @st.cache_data
@@ -210,8 +243,6 @@ def calculate_counts(filtered_df, tomb_df, active_cpfs, tombados_set, aguardando
     num_inconsistencias = len(inconsistencias_df)
 
     # Registros Consulta Ativa count
-    # Convert sets to DataFrames for merging if they are large, otherwise list comprehension is fine
-    # For optimization, let's create a temporary DataFrame for faster lookup
     active_contracts_df = filtered_df[
         filtered_df['Número CPF/CNPJ'].isin(active_cpfs)
     ].copy()
@@ -227,23 +258,28 @@ def calculate_counts(filtered_df, tomb_df, active_cpfs, tombados_set, aguardando
 
 
     # Aguardando Conclusão count (ajustado para excluir tombados)
-aguardando_df = pd.DataFrame(list(aguardando_set), columns=['Número CPF/CNPJ', 'Número Contrato Crédito'])
+    # Primeiro, converte aguardando_set para um DataFrame
+    aguardando_df = pd.DataFrame(list(aguardando_set), columns=['Número CPF/CNPJ', 'Número Contrato Crédito'])
 
-# Exclui registros que já foram tombados
-aguardando_df['temp_key'] = list(zip(aguardando_df['Número CPF/CNPJ'], aguardando_df['Número Contrato Crédito']))
-aguardando_df = aguardando_df[~aguardando_df['temp_key'].isin(tombados_set)].drop(columns=['temp_key'])
+    # Exclui registros que já foram tombados
+    # Cria uma chave temporária para o merge/filtro
+    aguardando_df['temp_key'] = list(zip(aguardando_df['Número CPF/CNPJ'], aguardando_df['Número Contrato Crédito']))
+    # Filtra os que não estão no set de tombados
+    aguardando_df = aguardando_df[~aguardando_df['temp_key'].isin(tombados_set)].drop(columns=['temp_key'])
 
-merged_aguardando = aguardando_df.merge(
-    df,
-    on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
-    how='inner'
-)
-    num_aguardando = len(merged_st.session_state.get('aguardando_set', aguardando))
+    # Agora faz o merge com o df original (que é filtered_common_df ou df, dependendo do que você quer que apareça na lista)
+    # Se quiser apenas os que *existem* na base de novo empréstimo, faça o merge com 'df' ou 'filtered_common_df'
+    merged_aguardando = aguardando_df.merge(
+        df, # ou filtered_common_df se quiser apenas os da submodalidade específica
+        on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
+        how='inner'
+    )
+    num_aguardando = len(merged_aguardando)
 
     # Tombado count
     tombados_df_temp = pd.DataFrame(list(tombados_set), columns=['Número CPF/CNPJ', 'Número Contrato Crédito'])
     merged_tombados = tombados_df_temp.merge(
-        df,
+        df, # ou filtered_common_df
         on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
         how='inner'
     )
@@ -252,7 +288,7 @@ merged_aguardando = aguardando_df.merge(
     return num_inconsistencias, num_consulta_ativa, num_aguardando, num_tombado, inconsistencias_df, registros_consulta_ativa_df, merged_aguardando, merged_tombados
 
 num_inconsistencias, num_consulta_ativa, num_aguardando, num_tombado, inconsistencias_data, registros_consulta_ativa_data, aguardando_conclusao_data, tombado_data = \
-    calculate_counts(filtered_common_df, tomb, cpfs_ativos, tombados, st.session_state.get('aguardando_set', aguardando))
+    calculate_counts(filtered_common_df, tomb, cpfs_ativos, tombados, aguardando)
 
 st.sidebar.header("Menu")
 menu_options = [
@@ -273,8 +309,8 @@ if menu == "Atualizar Bases":
         if st.session_state.arquivo_novo and st.session_state.arquivo_tomb:
             salvar_arquivos(st.session_state.arquivo_novo, st.session_state.arquivo_tomb)
             st.success("Bases atualizadas.")
-            st.cache_data.clear()
-st.rerun() # Rerun to update counts and dataframes
+            # st.cache_data.clear() # Já está dentro de salvar_arquivos
+            st.rerun() # Rerun to update counts and dataframes
         else:
             st.warning("Envie os dois arquivos para atualizar.")
     st.stop()
@@ -322,9 +358,8 @@ if "Consulta Individual" in menu:
                 else:
                     if st.button("Marcar como Consulta Ativa"):
                         marcar_cpf_ativo(cpf_validado)
-                        st.success("✅ CPF marcado com sucesso.")
-                        st.cache_data.clear()
-st.rerun()
+                        # st.cache_data.clear() # Já é chamado dentro de marcar_cpf_ativo
+                        st.rerun()
         else:
             st.warning("CPF inválido. Digite exatamente 11 números.")
 
@@ -348,8 +383,8 @@ if "Registros Consulta Ativa" in menu:
         if st.button("Marcar como Lançado Sisbr", key=f"btn_ca_{cpf_escolhido}_{contrato_escolhido}"):
             marcar_aguardando(cpf_escolhido, contrato_escolhido)
             st.success(f"Contrato {contrato_escolhido} do CPF {cpf_escolhido} foi movido para 'Aguardando Conclusão'.")
-            st.cache_data.clear()
-st.rerun()
+            # st.cache_data.clear() # Já é chamado dentro de marcar_aguardando
+            st.rerun()
     else:
         st.info("Nenhum registro disponível para Consulta Ativa.")
 
@@ -365,7 +400,7 @@ if menu == "Resumo":
         # Add status columns directly
         temp_df['Consulta Ativa'] = temp_df['Número CPF/CNPJ'].isin(cpfs_ativos)
         temp_df['Tombado'] = temp_df['Contrato_Tuple'].isin(tombados)
-        temp_df['Aguardando'] = temp_df['Contrato_Tuple'].isin(st.session_state.get('aguardando_set', aguardando))
+        temp_df['Aguardando'] = temp_df['Contrato_Tuple'].isin(aguardando) # Usar o 'aguardando' da sessão
 
         # Merge with tomb for consignante info
         df_registros = temp_df.merge(
@@ -451,8 +486,8 @@ if "Aguardando Conclusão" in menu:
         if st.button("Marcar como Tombado", key=f"btn_ag_{cpf_escolhido}_{contrato_escolhido}"):
             marcar_tombado(cpf_escolhido, contrato_escolhido)
             st.success(f"Contrato {contrato_escolhido} do CPF {cpf_escolhido} foi tombado com sucesso.")
-            st.cache_data.clear()
-st.rerun()
+            # st.cache_data.clear() # Já é chamado dentro de marcar_tombado
+            st.rerun() # Essencial para atualizar a exibição
     else:
         st.info("Nenhum registro encontrado.")
 
@@ -492,4 +527,3 @@ if "Tombado" in menu:
             st.info("Nenhum CPF disponível para seleção.")
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
-
