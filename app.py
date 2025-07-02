@@ -25,11 +25,33 @@ def carregar_cpfs_ativos():
     except:
         return []
 
+
+def carregar_tombados_google():
+    try:
+        tomb_sheet = client.open("consulta_ativa").worksheet("tombados")
+        values = tomb_sheet.get_all_values()
+        if not values or len(values) < 2:
+            return set()
+        return set((row[0], row[1]) for row in values[1:])  # (cpf, contrato)
+    except:
+        return set()
+
+def marcar_tombado(cpf, contrato):
+    try:
+        tomb_sheet = client.open("consulta_ativa").worksheet("tombados")
+    except:
+        tomb_sheet = client.open("consulta_ativa").add_worksheet(title="tombados", rows="1000", cols="2")
+        tomb_sheet.append_row(["cpf", "contrato"])
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    tomb_sheet.append_row([cpf, contrato])
+
+
 def marcar_cpf_ativo(cpf):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     sheet.append_row([cpf, timestamp])
 
 cpfs_ativos = carregar_cpfs_ativos()
+tombados = carregar_tombados_google()
 
 # Inicialização do estado
 for key in ["autenticado", "arquivo_novo", "arquivo_tomb"]:
@@ -75,7 +97,7 @@ def salvar_arquivos(upload_novo, upload_tomb):
     carregar_bases_do_disco()
 
 st.sidebar.header("Menu")
-menu = st.sidebar.radio("Navegação", ["Consulta Individual", "Registros Consulta Ativa", "Resumo", "Inconsistências", "Atualizar Bases"])
+menu = st.sidebar.radio("Navegação", ["Consulta Individual", "Registros Consulta Ativa", "Tombado", "Resumo", "Inconsistências", "Atualizar Bases"])
 
 if menu == "Atualizar Bases":
     st.session_state.arquivo_novo = st.sidebar.file_uploader("Nova Base NovoEmprestimo.xlsx", type="xlsx")
@@ -152,7 +174,62 @@ if menu == "Consulta Individual":
                     st.success("✅ CPF marcado com sucesso.")
                     st.rerun()
 
+
 if menu == "Registros Consulta Ativa":
+    st.title("📋 Registros de Consulta Ativa")
+
+    df = st.session_state.novo_df
+    tomb = st.session_state.tomb_df
+
+    registros = []
+
+    for cpf_input in cpfs_ativos:
+        filtrado = df[
+            (df['Número CPF/CNPJ'] == cpf_input) &
+            (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
+            (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
+            (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 101014, 137510]))
+        ]
+
+        for _, row in filtrado.iterrows():
+            contrato = str(row['Número Contrato Crédito'])
+            if (cpf_input, contrato) in tombados:
+                continue
+
+            match = tomb[
+                (tomb['CPF Tomador'] == cpf_input) &
+                (tomb['Número Contrato'] == contrato)
+            ]
+
+            consignante = match['CNPJ Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
+            empresa = match['Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
+
+            registros.append({
+                "Número CPF/CNPJ": row['Número CPF/CNPJ'],
+                "Nome Cliente": row['Nome Cliente'],
+                "Número Contrato Crédito": contrato,
+                "Quantidade Parcelas Abertas": row['Quantidade Parcelas Abertas'],
+                "% Taxa Operação": row['% Taxa Operação'],
+                "Código Linha Crédito": row['Código Linha Crédito'],
+                "Nome Comercial": row['Nome Comercial'],
+                "Consignante": consignante,
+                "Empresa Consignante": empresa
+            })
+
+    if registros:
+        df_resultado = pd.DataFrame(registros)
+        st.dataframe(df_resultado)
+
+        if st.checkbox("Marcar como Tombado"):
+            cpf_tombar = st.text_input("CPF do contrato a tombar")
+            contrato_tombar = st.text_input("Número do Contrato a tombar")
+            if st.button("Confirmar Tombamento"):
+                marcar_tombado(cpf_tombar, contrato_tombar)
+                st.success("Contrato marcado como Tombado com sucesso.")
+                st.rerun()
+    else:
+        st.info("Nenhum registro encontrado para os CPFs marcados como Consulta Ativa.")
+
     st.title("📋 Registros de Consulta Ativa")
 
     df = st.session_state.novo_df
@@ -302,4 +379,43 @@ if menu == "Inconsistências":
                     file_name="inconsistencias_tombamento.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+
+
+if menu == "Tombado":
+    st.title("📁 Registros Tombados")
+
+    df = st.session_state.novo_df
+    tomb = st.session_state.tomb_df
+
+    registros = []
+
+    for cpf_input, contrato in tombados:
+        match_df = df[
+            (df['Número CPF/CNPJ'] == cpf_input) &
+            (df['Número Contrato Crédito'].astype(str) == contrato)
+        ]
+        for _, row in match_df.iterrows():
+            tomb_match = tomb[
+                (tomb['CPF Tomador'] == cpf_input) &
+                (tomb['Número Contrato'] == contrato)
+            ]
+            consignante = tomb_match['CNPJ Empresa Consignante'].iloc[0] if not tomb_match.empty else "CONSULTE SISBR"
+            empresa = tomb_match['Empresa Consignante'].iloc[0] if not tomb_match.empty else "CONSULTE SISBR"
+
+            registros.append({
+                "Número CPF/CNPJ": row['Número CPF/CNPJ'],
+                "Nome Cliente": row['Nome Cliente'],
+                "Número Contrato Crédito": contrato,
+                "Quantidade Parcelas Abertas": row['Quantidade Parcelas Abertas'],
+                "% Taxa Operação": row['% Taxa Operação'],
+                "Código Linha Crédito": row['Código Linha Crédito'],
+                "Nome Comercial": row['Nome Comercial'],
+                "Consignante": consignante,
+                "Empresa Consignante": empresa
+            })
+
+    if registros:
+        st.dataframe(pd.DataFrame(registros))
+    else:
+        st.info("Nenhum contrato marcado como tombado encontrado.")
 
