@@ -8,23 +8,30 @@ from oauth2client.service_account import ServiceAccountCredentials
 
 st.set_page_config(page_title="Consulta de Empréstimos", layout="wide")
 
-# Google Sheets Setup
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds_dict = json.loads(st.secrets["gspread"]["json"])
-creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-client = gspread.authorize(creds)
-sheet = client.open("consulta_ativa").sheet1
+# Google Sheets Setup - Use st.cache_resource for the gspread client
+@st.cache_resource
+def get_gspread_client():
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds_dict = json.loads(st.secrets["gspread"]["json"])
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client = gspread.authorize(creds)
+    return client
 
+client = get_gspread_client()
+
+@st.cache_data(ttl=300) # Cache for 5 minutes to keep data relatively fresh
 def carregar_cpfs_ativos():
     try:
+        sheet = client.open("consulta_ativa").sheet1
         values = sheet.get_all_values()
         if not values or len(values) < 2:
             return []
         return [row[0] for row in values[1:]]  # Ignora cabeçalho
-    except:
+    except Exception as e:
+        st.error(f"Erro ao carregar CPFs ativos: {e}")
         return []
 
-
+@st.cache_data(ttl=300)
 def carregar_tombados_google():
     try:
         tomb_sheet = client.open("consulta_ativa").worksheet("tombados")
@@ -32,9 +39,23 @@ def carregar_tombados_google():
         if not values or len(values) < 2:
             return set()
         return set((row[0], row[1]) for row in values[1:])  # (cpf, contrato)
-    except:
+    except Exception as e:
+        st.error(f"Erro ao carregar registros tombados: {e}")
         return set()
 
+@st.cache_data(ttl=300)
+def carregar_aguardando_google():
+    try:
+        aguard_sheet = client.open("consulta_ativa").worksheet("aguardando")
+        values = aguard_sheet.get_all_values()
+        if not values or len(values) < 2:
+            return set()
+        return set((row[0], row[1]) for row in values[1:])
+    except Exception as e:
+        st.error(f"Erro ao carregar registros aguardando: {e}")
+        return set()
+
+# Functions that modify Google Sheets should not be cached, but their calls should invalidate relevant caches
 def marcar_tombado(cpf, contrato):
     try:
         tomb_sheet = client.open("consulta_ativa").worksheet("tombados")
@@ -43,22 +64,13 @@ def marcar_tombado(cpf, contrato):
         tomb_sheet.append_row(["cpf", "contrato", "timestamp"])
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     tomb_sheet.append_row([cpf, contrato, timestamp])
-
+    st.cache_data.clear() # Invalidate cache for tombados data
 
 def marcar_cpf_ativo(cpf):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    sheet = client.open("consulta_ativa").sheet1 # Get the sheet reference again
     sheet.append_row([cpf, timestamp])
-
-
-def carregar_aguardando_google():
-    try:
-        aguard_sheet = client.open("consulta_ativa").worksheet("aguardando")
-        values = aguard_sheet.get_all_values()
-        if not values or len(values) < 2:
-            return set()
-        return set((row[0], row[1]) for row in values[1:])
-    except:
-        return set()
+    st.cache_data.clear() # Invalidate cache for active CPFs
 
 def marcar_aguardando(cpf, contrato):
     try:
@@ -68,16 +80,12 @@ def marcar_aguardando(cpf, contrato):
         aguard_sheet.append_row(["cpf", "contrato", "timestamp"])
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     aguard_sheet.append_row([cpf, contrato, timestamp])
+    st.cache_data.clear() # Invalidate cache for aguardando data
 
-
-cpfs_ativos = carregar_cpfs_ativos()
-tombados = carregar_tombados_google()
-aguardando = carregar_aguardando_google()
-
-# Inicialização do estado
-for key in ["autenticado", "arquivo_novo", "arquivo_tomb"]:
+# Initialize session state variables
+for key in ["autenticado", "arquivo_novo", "arquivo_tomb", "novo_df", "tomb_df", "ultimo_cpf_consultado"]:
     if key not in st.session_state:
-        st.session_state[key] = None if key != "autenticado" else False
+        st.session_state[key] = None if key not in ["autenticado", "novo_df", "tomb_df"] else False if key == "autenticado" else pd.DataFrame()
 
 DATA_DIR = "data"
 NOVO_PATH = os.path.join(DATA_DIR, "novoemprestimo.xlsx")
@@ -94,100 +102,128 @@ def autenticar():
     elif senha:
         st.error("Senha incorreta.")
 
-autenticar()
 if not st.session_state.autenticado:
+    autenticar()
     st.stop()
 
-def formatar_documentos(df, col, tamanho):
-    return df[col].astype(str).str.replace(r'\D', '', regex=True).str.zfill(tamanho)
+@st.cache_data
+def formatar_documentos(df_input, col, tamanho):
+    df = df_input.copy() # Work on a copy to avoid SettingWithCopyWarning
+    df[col] = df[col].astype(str).str.replace(r'\D', '', regex=True).str.zfill(tamanho)
+    return df
 
-def carregar_bases_do_disco():
-    st.session_state.novo_df = pd.read_excel(NOVO_PATH)
-    st.session_state.tomb_df = pd.read_excel(TOMB_PATH)
+@st.cache_data
+def load_and_process_data(novo_path, tomb_path):
+    novo_df = pd.read_excel(novo_path)
+    tomb_df = pd.read_excel(tomb_path)
 
-    st.session_state.novo_df['Número CPF/CNPJ'] = formatar_documentos(st.session_state.novo_df, 'Número CPF/CNPJ', 11)
-    st.session_state.tomb_df['CPF Tomador'] = formatar_documentos(st.session_state.tomb_df, 'CPF Tomador', 11)
-    if 'Número Contrato' in st.session_state.tomb_df.columns:
-        st.session_state.tomb_df['Número Contrato'] = st.session_state.tomb_df['Número Contrato'].astype(str)
+    novo_df = formatar_documentos(novo_df, 'Número CPF/CNPJ', 11)
+    tomb_df = formatar_documentos(tomb_df, 'CPF Tomador', 11)
+    if 'Número Contrato' in tomb_df.columns:
+        tomb_df['Número Contrato'] = tomb_df['Número Contrato'].astype(str)
+    if 'Número Contrato Crédito' in novo_df.columns:
+        novo_df['Número Contrato Crédito'] = novo_df['Número Contrato Crédito'].astype(str)
+
+    return novo_df, tomb_df
 
 def salvar_arquivos(upload_novo, upload_tomb):
     with open(NOVO_PATH, "wb") as f:
         f.write(upload_novo.read())
     with open(TOMB_PATH, "wb") as f:
         f.write(upload_tomb.read())
-    carregar_bases_do_disco()
+    # Invalidate caches that depend on these files
+    st.cache_data.clear() # Clears all @st.cache_data caches
+    # Re-load processed data into session state
+    st.session_state.novo_df, st.session_state.tomb_df = load_and_process_data(NOVO_PATH, TOMB_PATH)
 
-# --- Calculate counts for menu items ---
-num_inconsistencias = 0
-num_consulta_ativa = 0
-num_aguardando = 0
-num_tombado = 0
 
-if os.path.exists(NOVO_PATH) and os.path.exists(TOMB_PATH):
-    try:
-        carregar_bases_do_disco()
-        df = st.session_state.novo_df
-        tomb = st.session_state.tomb_df
+# --- Data Loading and Pre-processing (Centralized and Cached) ---
+if not os.path.exists(NOVO_PATH) or not os.path.exists(TOMB_PATH):
+    st.info("Faça o upload das bases para iniciar o sistema.")
+    arquivo_novo = st.file_uploader("Base NovoEmprestimo.xlsx", type="xlsx", key="upload_novo")
+    arquivo_tomb = st.file_uploader("Base Tombamento.xlsx", type="xlsx", key="upload_tomb")
+    if arquivo_novo and arquivo_tomb:
+        salvar_arquivos(arquivo_novo, arquivo_tomb)
+        st.success("Bases carregadas com sucesso.")
+        st.rerun()
+    else:
+        st.stop()
+else:
+    # Load data once and store in session state
+    if st.session_state.novo_df.empty or st.session_state.tomb_df.empty:
+        st.session_state.novo_df, st.session_state.tomb_df = load_and_process_data(NOVO_PATH, TOMB_PATH)
 
-        # Inconsistencies count
-        filtrado_incons = df[
-            (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
-            (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
-            (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 101014, 137510]))
-        ].copy()
+# Retrieve data for calculations and display
+df = st.session_state.novo_df
+tomb = st.session_state.tomb_df
+cpfs_ativos = carregar_cpfs_ativos()
+tombados = carregar_tombados_google()
+aguardando = carregar_aguardando_google()
 
-        filtrado_incons['Origem'] = filtrado_incons.apply(
-            lambda row: "TOMBAMENTO" if not tomb[
-                (tomb['CPF Tomador'] == row['Número CPF/CNPJ']) &
-                (tomb['Número Contrato'] == str(row['Número Contrato Crédito']))
-            ].empty else "CONSULTE SISBR", axis=1
-        )
-        num_inconsistencias = len(filtrado_incons[filtrado_incons['Origem'] == 'CONSULTE SISBR'])
+# Filter initial DataFrame once for common conditions
+@st.cache_data
+def get_filtered_df(df_input):
+    return df_input[
+        (df_input['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
+        (df_input['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
+        (~df_input['Código Linha Crédito'].isin([140073, 138358, 141011, 101014, 137510]))
+    ].copy()
 
-        # Registros Consulta Ativa count
-        registros_consulta_ativa_list = []
-        for cpf_input in cpfs_ativos:
-            filtrado_ca = df[
-                (df['Número CPF/CNPJ'] == cpf_input) &
-                (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
-                (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
-                (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 101014, 137510]))
-            ]
-            for _, row in filtrado_ca.iterrows():
-                contrato = str(row['Número Contrato Crédito'])
-                if (cpf_input, contrato) not in tombados and (cpf_input, contrato) not in aguardando:
-                    registros_consulta_ativa_list.append(row)
-        num_consulta_ativa = len(registros_consulta_ativa_list)
+filtered_common_df = get_filtered_df(df)
 
-        # Aguardando Conclusão count
-        registros_aguardando_list = []
-        for cpf_input, contrato in aguardando:
-            match_df = df[
-                (df['Número CPF/CNPJ'] == cpf_input) &
-                (df['Número Contrato Crédito'].astype(str) == contrato)
-            ]
-            if not match_df.empty:
-                registros_aguardando_list.append(match_df.iloc[0])
-        num_aguardando = len(registros_aguardando_list)
+# --- Optimized Calculation of Counts for Menu Items ---
+@st.cache_data
+def calculate_counts(filtered_df, tomb_df, active_cpfs, tombados_set, aguardando_set):
+    # Inconsistencies count
+    merged_df = filtered_df.merge(
+        tomb_df[['CPF Tomador', 'Número Contrato']],
+        left_on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
+        right_on=['CPF Tomador', 'Número Contrato'],
+        how='left',
+        indicator=True
+    )
+    inconsistencias_df = merged_df[merged_df['_merge'] == 'left_only']
+    num_inconsistencias = len(inconsistencias_df)
 
-        # Tombado count
-        registros_tombados_list = []
-        for cpf_input, contrato in tombados:
-            match_df = df[
-                (df['Número CPF/CNPJ'] == cpf_input) &
-                (df['Número Contrato Crédito'].astype(str) == contrato)
-            ]
-            if not match_df.empty:
-                registros_tombados_list.append(match_df.iloc[0])
-        num_tombado = len(registros_tombados_list)
+    # Registros Consulta Ativa count
+    # Convert sets to DataFrames for merging if they are large, otherwise list comprehension is fine
+    # For optimization, let's create a temporary DataFrame for faster lookup
+    active_contracts_df = filtered_df[
+        filtered_df['Número CPF/CNPJ'].isin(active_cpfs)
+    ].copy()
+    
+    # Exclude already tombados or aguardando
+    active_contracts_df['temp_key'] = active_contracts_df.apply(lambda r: (r['Número CPF/CNPJ'], r['Número Contrato Crédito']), axis=1)
+    
+    registros_consulta_ativa_df = active_contracts_df[
+        ~active_contracts_df['temp_key'].isin(tombados_set) &
+        ~active_contracts_df['temp_key'].isin(aguardando_set)
+    ].drop(columns=['temp_key'])
+    num_consulta_ativa = len(registros_consulta_ativa_df)
 
-    except Exception as e:
-        st.error(f"Erro ao carregar dados para os contadores: {e}")
-        num_inconsistencias = 0
-        num_consulta_ativa = 0
-        num_aguardando = 0
-        num_tombado = 0
 
+    # Aguardando Conclusão count
+    aguardando_df = pd.DataFrame(list(aguardando_set), columns=['Número CPF/CNPJ', 'Número Contrato Crédito'])
+    merged_aguardando = aguardando_df.merge(
+        df,
+        on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
+        how='inner'
+    )
+    num_aguardando = len(merged_aguardando)
+
+    # Tombado count
+    tombados_df_temp = pd.DataFrame(list(tombados_set), columns=['Número CPF/CNPJ', 'Número Contrato Crédito'])
+    merged_tombados = tombados_df_temp.merge(
+        df,
+        on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
+        how='inner'
+    )
+    num_tombado = len(merged_tombados)
+
+    return num_inconsistencias, num_consulta_ativa, num_aguardando, num_tombado, inconsistencias_df, registros_consulta_ativa_df, merged_aguardando, merged_tombados
+
+num_inconsistencias, num_consulta_ativa, num_aguardando, num_tombado, inconsistencias_data, registros_consulta_ativa_data, aguardando_conclusao_data, tombado_data = \
+    calculate_counts(filtered_common_df, tomb, cpfs_ativos, tombados, aguardando)
 
 st.sidebar.header("Menu")
 menu_options = [
@@ -208,23 +244,10 @@ if menu == "Atualizar Bases":
         if st.session_state.arquivo_novo and st.session_state.arquivo_tomb:
             salvar_arquivos(st.session_state.arquivo_novo, st.session_state.arquivo_tomb)
             st.success("Bases atualizadas.")
-            st.rerun()
+            st.rerun() # Rerun to update counts and dataframes
         else:
             st.warning("Envie os dois arquivos para atualizar.")
     st.stop()
-
-if not os.path.exists(NOVO_PATH) or not os.path.exists(TOMB_PATH):
-    st.info("Faça o upload das bases para iniciar o sistema.")
-    arquivo_novo = st.file_uploader("Base NovoEmprestimo.xlsx", type="xlsx", key="upload_novo")
-    arquivo_tomb = st.file_uploader("Base Tombamento.xlsx", type="xlsx", key="upload_tomb")
-    if arquivo_novo and arquivo_tomb:
-        salvar_arquivos(arquivo_novo, arquivo_tomb)
-        st.success("Bases carregadas com sucesso.")
-        st.rerun()
-    else:
-        st.stop()
-else:
-    carregar_bases_do_disco()
 
 
 if "Consulta Individual" in menu:
@@ -241,43 +264,29 @@ if "Consulta Individual" in menu:
         cpf_validado = st.session_state.ultimo_cpf_consultado
 
         if cpf_validado and len(cpf_validado) == 11 and cpf_validado.isdigit():
-            df = st.session_state.novo_df
-            tomb = st.session_state.tomb_df
-
-            filtrado = df[
-                (df['Número CPF/CNPJ'] == cpf_validado) &
-                (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
-                (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
-                (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 101014, 137510]))
-            ]
+            # Use the already filtered common_df
+            filtrado = filtered_common_df[filtered_common_df['Número CPF/CNPJ'] == cpf_validado].copy()
 
             if filtrado.empty:
                 st.warning("Nenhum contrato encontrado com os filtros aplicados.")
             else:
-                resultados = []
-                for _, row in filtrado.iterrows():
-                    contrato = str(row['Número Contrato Crédito'])
-                    match = tomb[
-                        (tomb['CPF Tomador'] == cpf_validado) &
-                        (tomb['Número Contrato'] == contrato)
-                    ]
+                # Optimized merge for consignante info
+                resultados_df = filtrado.merge(
+                    tomb[['CPF Tomador', 'Número Contrato', 'CNPJ Empresa Consignante', 'Empresa Consignante']],
+                    left_on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
+                    right_on=['CPF Tomador', 'Número Contrato'],
+                    how='left'
+                )
+                resultados_df['Consignante'] = resultados_df['CNPJ Empresa Consignante'].fillna("CONSULTE SISBR")
+                resultados_df['Empresa Consignante'] = resultados_df['Empresa Consignante'].fillna("CONSULTE SISBR")
 
-                    consignante = match['CNPJ Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
-                    empresa = match['Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
+                display_cols = [
+                    "Número CPF/CNPJ", "Nome Cliente", "Número Contrato Crédito",
+                    "Quantidade Parcelas Abertas", "% Taxa Operação", "Código Linha Crédito",
+                    "Nome Comercial", "Consignante", "Empresa Consignante"
+                ]
+                st.dataframe(resultados_df[display_cols])
 
-                    resultados.append({
-                        "Número CPF/CNPJ": row['Número CPF/CNPJ'],
-                        "Nome Cliente": row['Nome Cliente'],
-                        "Número Contrato Crédito": contrato,
-                        "Quantidade Parcelas Abertas": row['Quantidade Parcelas Abertas'],
-                        "% Taxa Operação": row['% Taxa Operação'],
-                        "Código Linha Crédito": row['Código Linha Crédito'],
-                        "Nome Comercial": row['Nome Comercial'],
-                        "Consignante": consignante,
-                        "Empresa Consignante": empresa
-                    })
-
-                st.dataframe(pd.DataFrame(resultados))
                 if cpf_validado in cpfs_ativos:
                     st.info("✅ CPF já marcado como Consulta Ativa.")
                 else:
@@ -292,28 +301,17 @@ if "Consulta Individual" in menu:
 if "Registros Consulta Ativa" in menu:
     st.title(f"📋 Registros de Consulta Ativa ({num_consulta_ativa})")
 
-    df = st.session_state.novo_df
-    registros = []
+    if not registros_consulta_ativa_data.empty:
+        st.dataframe(registros_consulta_ativa_data, use_container_width=True)
 
-    for cpf_input in cpfs_ativos:
-        filtrado = df[
-            (df['Número CPF/CNPJ'] == cpf_input) &
-            (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
-            (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
-            (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 101014, 137510]))
-        ]
-        for _, row in filtrado.iterrows():
-            contrato = str(row['Número Contrato Crédito'])
-            if (cpf_input, contrato) not in tombados and (cpf_input, contrato) not in aguardando:
-                registros.append(row)
+        # Get unique CPFs and Contracts from the already calculated and filtered dataframe
+        unique_cpfs_ca = registros_consulta_ativa_data['Número CPF/CNPJ'].unique().tolist()
+        cpf_escolhido = st.selectbox("CPF para marcar como Lançado Sisbr", unique_cpfs_ca, key="cpf_ca_key")
 
-    if registros:
-        df_ca = pd.DataFrame(registros)
-        st.dataframe(df_ca, use_container_width=True)
+        contratos_filtrados = registros_consulta_ativa_data[
+            registros_consulta_ativa_data['Número CPF/CNPJ'] == cpf_escolhido
+        ]['Número Contrato Crédito'].astype(str).tolist()
 
-        cpf_escolhido = st.selectbox("CPF para marcar como Lançado Sisbr", df_ca['Número CPF/CNPJ'].unique(), key="cpf_ca_key")
-
-        contratos_filtrados = df_ca[df_ca['Número CPF/CNPJ'] == cpf_escolhido]['Número Contrato Crédito'].astype(str).tolist()
         contrato_escolhido = st.selectbox("Contrato para marcar:", contratos_filtrados, key=f"contrato_ca_{cpf_escolhido}")
 
         if st.button("Marcar como Lançado Sisbr", key=f"btn_ca_{cpf_escolhido}_{contrato_escolhido}"):
@@ -327,42 +325,27 @@ if "Registros Consulta Ativa" in menu:
 if menu == "Resumo":
     st.title("📊 Resumo Consolidado por Consignante (Base Completa)")
 
-    df = st.session_state.novo_df
-    tomb = st.session_state.tomb_df
+    if not filtered_common_df.empty:
+        # Prepare data for merge and status flags
+        temp_df = filtered_common_df[['Número CPF/CNPJ', 'Número Contrato Crédito']].copy()
+        temp_df['Contrato_Tuple'] = list(zip(temp_df['Número CPF/CNPJ'], temp_df['Número Contrato Crédito']))
 
-    registros = []
+        # Add status columns directly
+        temp_df['Consulta Ativa'] = temp_df['Número CPF/CNPJ'].isin(cpfs_ativos)
+        temp_df['Tombado'] = temp_df['Contrato_Tuple'].isin(tombados)
+        temp_df['Aguardando'] = temp_df['Contrato_Tuple'].isin(aguardando)
 
-    for _, row in df.iterrows():
-        cpf = row['Número CPF/CNPJ']
-        contrato = str(row['Número Contrato Crédito'])
+        # Merge with tomb for consignante info
+        df_registros = temp_df.merge(
+            tomb[['CPF Tomador', 'Número Contrato', 'CNPJ Empresa Consignante', 'Empresa Consignante']],
+            left_on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
+            right_on=['CPF Tomador', 'Número Contrato'],
+            how='left'
+        )
+        df_registros['CNPJ Empresa Consignante'] = df_registros['CNPJ Empresa Consignante'].fillna("CONSULTE SISBR")
+        df_registros['Empresa Consignante'] = df_registros['Empresa Consignante'].fillna("CONSULTE SISBR")
+        df_registros = df_registros.rename(columns={'Número CPF/CNPJ': 'CPF', 'Número Contrato Crédito': 'Contrato'})
 
-        if row['Submodalidade Bacen'] != 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.':
-            continue
-        if row['Critério Débito'] != 'FOLHA DE PAGAMENTO':
-            continue
-        if row['Código Linha Crédito'] in [140073, 138358, 141011, 101014, 137510]:
-            continue
-
-        match = tomb[
-            (tomb['CPF Tomador'] == cpf) &
-            (tomb['Número Contrato'] == contrato)
-        ]
-
-        consignante = match['CNPJ Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
-        empresa = match['Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
-
-        registros.append({
-            "CNPJ Empresa Consignante": consignante,
-            "Empresa Consignante": empresa,
-            "CPF": cpf,
-            "Contrato": contrato,
-            "Consulta Ativa": cpf in cpfs_ativos,
-            "Tombado": (cpf, contrato) in tombados,
-            "Aguardando": (cpf, contrato) in aguardando
-        })
-
-    if registros:
-        df_registros = pd.DataFrame(registros)
 
         resumo = df_registros.groupby(["CNPJ Empresa Consignante", "Empresa Consignante"]).agg(
             Total_Cooperados=("CPF", "nunique"),
@@ -378,7 +361,7 @@ if menu == "Resumo":
             import io
             with io.BytesIO() as buffer:
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    df_registros.to_excel(writer, index=False, sheet_name="Relação Analítica")
+                    df_registros[['CPF', 'Contrato', 'CNPJ Empresa Consignante', 'Empresa Consignante', 'Consulta Ativa', 'Tombado', 'Aguardando']].to_excel(writer, index=False, sheet_name="Relação Analítica")
                 buffer.seek(0)
                 st.download_button(
                     label="Exportar para Excel",
@@ -393,41 +376,22 @@ if menu == "Resumo":
 if "Inconsistências" in menu:
     st.title(f"🚨 Contratos sem Correspondência no Tombamento ({num_inconsistencias})")
 
-    df = st.session_state.novo_df
-    tomb = st.session_state.tomb_df
-
-    df['Número CPF/CNPJ'] = df['Número CPF/CNPJ'].astype(str).str.replace(r'\D', '', regex=True).str.zfill(11)
-    tomb['CPF Tomador'] = tomb['CPF Tomador'].astype(str).str.replace(r'\D', '', regex=True).str.zfill(11)
-    tomb['Número Contrato'] = tomb['Número Contrato'].astype(str)
-
-    filtrado = df[
-        (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
-        (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
-        (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 101014, 137510]))
-    ].copy()
-
-    filtrado['Origem'] = filtrado.apply(
-        lambda row: "TOMBAMENTO" if not tomb[
-            (tomb['CPF Tomador'] == row['Número CPF/CNPJ']) &
-            (tomb['Número Contrato'] == str(row['Número Contrato Crédito']))
-        ].empty else "CONSULTE SISBR", axis=1
-    )
-
-    inconsistencias = filtrado[filtrado['Origem'] == 'CONSULTE SISBR'][
-        ['Número CPF/CNPJ', 'Número Contrato Crédito', 'Código Linha Crédito', 'Nome Cliente']
-    ]
-
-    if inconsistencias.empty:
+    if inconsistencias_data.empty:
         st.success("Nenhuma inconsistência encontrada.")
     else:
-        st.warning(f"{len(inconsistencias)} contratos sem correspondência no tombamento encontrados.")
-        st.dataframe(inconsistencias)
+        st.warning(f"{len(inconsistencias_data)} contratos sem correspondência no tombamento encontrados.")
+        # Only show relevant columns for inconsistencies
+        st.dataframe(inconsistencias_data[
+            ['Número CPF/CNPJ', 'Número Contrato Crédito', 'Código Linha Crédito', 'Nome Cliente']
+        ])
 
         with st.expander("📥 Exportar inconsistências"):
             import io
             with io.BytesIO() as buffer:
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    inconsistencias.to_excel(writer, index=False, sheet_name="Inconsistencias")
+                    inconsistencias_data[[
+                        'Número CPF/CNPJ', 'Número Contrato Crédito', 'Código Linha Crédito', 'Nome Cliente'
+                    ]].to_excel(writer, index=False, sheet_name="Inconsistencias")
                 buffer.seek(0)
                 st.download_button(
                     label="Exportar para Excel",
@@ -440,23 +404,16 @@ if "Inconsistências" in menu:
 if "Aguardando Conclusão" in menu:
     st.title(f"⏳ Registros Aguardando Conclusão ({num_aguardando})")
 
-    df = st.session_state.novo_df
-    registros = []
+    if not aguardando_conclusao_data.empty:
+        st.dataframe(aguardando_conclusao_data, use_container_width=True)
 
-    for cpf_input, contrato in aguardando:
-        match = df[
-            (df['Número CPF/CNPJ'] == cpf_input) &
-            (df['Número Contrato Crédito'].astype(str) == contrato)
-        ]
-        registros.extend(match.to_dict("records"))
+        unique_cpfs_ag = aguardando_conclusao_data['Número CPF/CNPJ'].unique().tolist()
+        cpf_escolhido = st.selectbox("CPF para tombar", unique_cpfs_ag, key="cpf_ag_key")
 
-    if registros:
-        df_ag = pd.DataFrame(registros)
-        st.dataframe(df_ag, use_container_width=True)
+        contratos_filtrados = aguardando_conclusao_data[
+            aguardando_conclusao_data['Número CPF/CNPJ'] == cpf_escolhido
+        ]['Número Contrato Crédito'].astype(str).tolist()
 
-        cpf_escolhido = st.selectbox("CPF para tombar", df_ag['Número CPF/CNPJ'].unique(), key="cpf_ag_key")
-
-        contratos_filtrados = df_ag[df_ag['Número CPF/CNPJ'] == cpf_escolhido]['Número Contrato Crédito'].astype(str).tolist()
         contrato_escolhido = st.selectbox("Contrato para tombar:", contratos_filtrados, key=f"contrato_ag_{cpf_escolhido}")
 
         if st.button("Marcar como Tombado", key=f"btn_ag_{cpf_escolhido}_{contrato_escolhido}"):
@@ -470,41 +427,25 @@ if "Aguardando Conclusão" in menu:
 if "Tombado" in menu:
     st.title(f"📁 Registros Tombados ({num_tombado})")
 
-    df = st.session_state.novo_df
-    tomb = st.session_state.tomb_df
+    if not tombado_data.empty:
+        # Merge with tomb for consignante info for display
+        df_resultado = tombado_data.merge(
+            tomb[['CPF Tomador', 'Número Contrato', 'CNPJ Empresa Consignante', 'Empresa Consignante']],
+            left_on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
+            right_on=['CPF Tomador', 'Número Contrato'],
+            how='left'
+        )
+        df_resultado['Consignante'] = df_resultado['CNPJ Empresa Consignante'].fillna("CONSULTE SISBR")
+        df_resultado['Empresa Consignante'] = df_resultado['Empresa Consignante'].fillna("CONSULTE SISBR")
 
-    registros = []
-
-    for cpf_input, contrato in tombados:
-        match_df = df[
-            (df['Número CPF/CNPJ'] == cpf_input) &
-            (df['Número Contrato Crédito'].astype(str) == contrato)
+        display_cols_tomb = [
+            "Número CPF/CNPJ", "Nome Cliente", "Número Contrato Crédito",
+            "Quantidade Parcelas Abertas", "% Taxa Operação", "Código Linha Crédito",
+            "Nome Comercial", "Consignante", "Empresa Consignante"
         ]
-        for _, row in match_df.iterrows():
-            tomb_match = tomb[
-                (tomb['CPF Tomador'] == cpf_input) &
-                (tomb['Número Contrato'] == contrato)
-            ]
-            consignante = tomb_match['CNPJ Empresa Consignante'].iloc[0] if not tomb_match.empty else "CONSULTE SISBR"
-            empresa = tomb_match['Empresa Consignante'].iloc[0] if not tomb_match.empty else "CONSULTE SISBR"
+        st.dataframe(df_resultado[display_cols_tomb], use_container_width=True)
 
-            registros.append({
-                "Número CPF/CNPJ": row['Número CPF/CNPJ'],
-                "Nome Cliente": row['Nome Cliente'],
-                "Número Contrato Crédito": contrato,
-                "Quantidade Parcelas Abertas": row['Quantidade Parcelas Abertas'],
-                "% Taxa Operação": row['% Taxa Operação'],
-                "Código Linha Crédito": row['Código Linha Crédito'],
-                "Nome Comercial": row['Nome Comercial'],
-                "Consignante": consignante,
-                "Empresa Consignante": empresa
-            })
-
-    if registros:
-        df_resultado = pd.DataFrame(registros) # Adicionado para garantir que df_resultado esteja definido
-        st.dataframe(df_resultado, use_container_width=True)
-
-        cpfs_disponiveis_tomb = df_resultado['Número CPF/CNPJ'].unique().tolist() # Usar df_resultado
+        cpfs_disponiveis_tomb = df_resultado['Número CPF/CNPJ'].unique().tolist()
         if cpfs_disponiveis_tomb:
             cpf_escolhido_tomb = st.selectbox("Selecione o CPF para visualizar contratos tombados:", sorted(list(set(cpfs_disponiveis_tomb))), key="select_cpf_tombado_view")
             
@@ -516,6 +457,5 @@ if "Tombado" in menu:
                 st.info("Nenhum contrato tombado para o CPF selecionado.")
         else:
             st.info("Nenhum CPF disponível para seleção.")
-
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
