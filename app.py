@@ -194,6 +194,7 @@ if menu == "Consulta Individual":
         else:
             st.warning("CPF inválido. Digite exatamente 11 números.")
 
+
 if menu == "Registros Consulta Ativa":
     st.title("📋 Registros de Consulta Ativa")
 
@@ -212,7 +213,7 @@ if menu == "Registros Consulta Ativa":
 
         for _, row in filtrado.iterrows():
             contrato = str(row['Número Contrato Crédito'])
-            if (cpf_input, contrato) in tombados:
+            if (cpf_input, contrato) in tombados or (cpf_input, contrato) in aguardando:
                 continue
 
             match = tomb[
@@ -240,16 +241,17 @@ if menu == "Registros Consulta Ativa":
         st.dataframe(df_resultado, use_container_width=True)
 
         cpfs_disponiveis = df_resultado['Número CPF/CNPJ'].unique().tolist()
-        cpf_escolhido = st.selectbox("Selecione o CPF para tombar todos os contratos associados:", cpfs_disponiveis)
+        cpf_escolhido = st.selectbox("Selecione o CPF para marcar como Lançado Sisbr:", cpfs_disponiveis)
 
-        if st.button("Marcar todos os contratos como Tombado"):
+        if st.button("Marcar todos os contratos como Lançado Sisbr"):
             contratos = df_resultado[df_resultado['Número CPF/CNPJ'] == cpf_escolhido]['Número Contrato Crédito'].astype(str).tolist()
             for contrato in contratos:
-                marcar_tombado(cpf_escolhido, contrato)
-            st.success(f"Todos os contratos do CPF {cpf_escolhido} foram tombados com sucesso.")
+                marcar_aguardando(cpf_escolhido, contrato)
+            st.success(f"Todos os contratos do CPF {cpf_escolhido} foram movidos para 'Aguardando Conclusão'.")
             st.rerun()
     else:
-        st.info("Nenhum registro encontrado para os CPFs marcados como Consulta Ativa.")
+        st.info("Nenhum registro disponível para Consulta Ativa.")
+
 
 if menu == "Resumo":
     st.title("📊 Resumo Consolidado por Consignante (Base Completa)")
@@ -400,3 +402,4 @@ if menu == "Tombado":
         st.dataframe(pd.DataFrame(registros))
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
+
