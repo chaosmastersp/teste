@@ -84,7 +84,8 @@ def marcar_tombado(cpf, contrato):
     except Exception as e:
         st.warning(f"Erro ao remover de 'aguardando': {e}")
 
-    st.cache_data.clear()  # Limpa cache das planilhas
+    st.cache_data.clear()
+    st.session_state['aguardando_set'] = carregar_aguardando_google()  # Limpa cache das planilhas
 
 
 def marcar_cpf_ativo(cpf):
@@ -166,7 +167,8 @@ if not os.path.exists(NOVO_PATH) or not os.path.exists(TOMB_PATH):
     if arquivo_novo and arquivo_tomb:
         salvar_arquivos(arquivo_novo, arquivo_tomb)
         st.success("Bases carregadas com sucesso.")
-        st.rerun()
+        st.cache_data.clear()
+st.rerun()
     else:
         st.stop()
 else:
@@ -235,7 +237,7 @@ merged_aguardando = aguardando_df.merge(
     on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
     how='inner'
 )
-    num_aguardando = len(merged_aguardando)
+    num_aguardando = len(merged_st.session_state.get('aguardando_set', aguardando))
 
     # Tombado count
     tombados_df_temp = pd.DataFrame(list(tombados_set), columns=['Número CPF/CNPJ', 'Número Contrato Crédito'])
@@ -249,7 +251,7 @@ merged_aguardando = aguardando_df.merge(
     return num_inconsistencias, num_consulta_ativa, num_aguardando, num_tombado, inconsistencias_df, registros_consulta_ativa_df, merged_aguardando, merged_tombados
 
 num_inconsistencias, num_consulta_ativa, num_aguardando, num_tombado, inconsistencias_data, registros_consulta_ativa_data, aguardando_conclusao_data, tombado_data = \
-    calculate_counts(filtered_common_df, tomb, cpfs_ativos, tombados, aguardando)
+    calculate_counts(filtered_common_df, tomb, cpfs_ativos, tombados, st.session_state.get('aguardando_set', aguardando))
 
 st.sidebar.header("Menu")
 menu_options = [
@@ -270,7 +272,8 @@ if menu == "Atualizar Bases":
         if st.session_state.arquivo_novo and st.session_state.arquivo_tomb:
             salvar_arquivos(st.session_state.arquivo_novo, st.session_state.arquivo_tomb)
             st.success("Bases atualizadas.")
-            st.rerun() # Rerun to update counts and dataframes
+            st.cache_data.clear()
+st.rerun() # Rerun to update counts and dataframes
         else:
             st.warning("Envie os dois arquivos para atualizar.")
     st.stop()
@@ -319,7 +322,8 @@ if "Consulta Individual" in menu:
                     if st.button("Marcar como Consulta Ativa"):
                         marcar_cpf_ativo(cpf_validado)
                         st.success("✅ CPF marcado com sucesso.")
-                        st.rerun()
+                        st.cache_data.clear()
+st.rerun()
         else:
             st.warning("CPF inválido. Digite exatamente 11 números.")
 
@@ -343,7 +347,8 @@ if "Registros Consulta Ativa" in menu:
         if st.button("Marcar como Lançado Sisbr", key=f"btn_ca_{cpf_escolhido}_{contrato_escolhido}"):
             marcar_aguardando(cpf_escolhido, contrato_escolhido)
             st.success(f"Contrato {contrato_escolhido} do CPF {cpf_escolhido} foi movido para 'Aguardando Conclusão'.")
-            st.rerun()
+            st.cache_data.clear()
+st.rerun()
     else:
         st.info("Nenhum registro disponível para Consulta Ativa.")
 
@@ -359,7 +364,7 @@ if menu == "Resumo":
         # Add status columns directly
         temp_df['Consulta Ativa'] = temp_df['Número CPF/CNPJ'].isin(cpfs_ativos)
         temp_df['Tombado'] = temp_df['Contrato_Tuple'].isin(tombados)
-        temp_df['Aguardando'] = temp_df['Contrato_Tuple'].isin(aguardando)
+        temp_df['Aguardando'] = temp_df['Contrato_Tuple'].isin(st.session_state.get('aguardando_set', aguardando))
 
         # Merge with tomb for consignante info
         df_registros = temp_df.merge(
@@ -445,7 +450,8 @@ if "Aguardando Conclusão" in menu:
         if st.button("Marcar como Tombado", key=f"btn_ag_{cpf_escolhido}_{contrato_escolhido}"):
             marcar_tombado(cpf_escolhido, contrato_escolhido)
             st.success(f"Contrato {contrato_escolhido} do CPF {cpf_escolhido} foi tombado com sucesso.")
-            st.rerun()
+            st.cache_data.clear()
+st.rerun()
     else:
         st.info("Nenhum registro encontrado.")
 
@@ -485,3 +491,4 @@ if "Tombado" in menu:
             st.info("Nenhum CPF disponível para seleção.")
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
+
