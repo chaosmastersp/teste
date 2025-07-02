@@ -57,14 +57,35 @@ def carregar_aguardando_google():
 
 # Functions that modify Google Sheets should not be cached, but their calls should invalidate relevant caches
 def marcar_tombado(cpf, contrato):
-    try:
-        tomb_sheet = client.open("consulta_ativa").worksheet("tombados")
-    except:
-        tomb_sheet = client.open("consulta_ativa").add_worksheet(title="tombados", rows="1000", cols="3")
-        tomb_sheet.append_row(["cpf", "contrato", "timestamp"])
+    consulta = client.open("consulta_ativa")
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Adiciona à planilha 'tombados'
+    try:
+        tomb_sheet = consulta.worksheet("tombados")
+    except:
+        tomb_sheet = consulta.add_worksheet(title="tombados", rows="1000", cols="3")
+        tomb_sheet.append_row(["cpf", "contrato", "timestamp"])
     tomb_sheet.append_row([cpf, contrato, timestamp])
-    st.cache_data.clear() # Invalidate cache for tombados data
+
+    # Remove da planilha 'aguardando'
+    try:
+        aguard_sheet = consulta.worksheet("aguardando")
+        all_values = aguard_sheet.get_all_values()
+        header = all_values[0]
+        data = all_values[1:]
+
+        new_data = [row for row in data if not (row[0] == cpf and row[1] == contrato)]
+
+        aguard_sheet.clear()
+        aguard_sheet.append_row(header)
+        for row in new_data:
+            aguard_sheet.append_row(row)
+    except Exception as e:
+        st.warning(f"Erro ao remover de 'aguardando': {e}")
+
+    st.cache_data.clear()  # Limpa cache das planilhas
+
 
 def marcar_cpf_ativo(cpf):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
