@@ -401,5 +401,3 @@ if menu == "Tombado":
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
 
-
-
