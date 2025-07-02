@@ -316,7 +316,7 @@ if menu == "Resumo":
 
     df_registros["Aguardando"] = df_registros.apply(lambda x: (x["CPF"], x["Contrato"]) in aguardando, axis=1)
 
-        resumo = df_registros.groupby(["CNPJ Empresa Consignante", "Empresa Consignante"]).agg(
+    resumo = df_registros.groupby(["CNPJ Empresa Consignante", "Empresa Consignante"]).agg(
             Total_Cooperados=("CPF", "nunique"),
             Total_Contratos=("Contrato", "count"),
             Total_Consulta_Ativa=("Consulta Ativa", "sum"),
@@ -479,4 +479,3 @@ if menu == "Tombado":
         st.dataframe(pd.DataFrame(registros))
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
-
