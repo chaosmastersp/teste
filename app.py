@@ -117,16 +117,89 @@ def salvar_arquivos(upload_novo, upload_tomb):
         f.write(upload_tomb.read())
     carregar_bases_do_disco()
 
+# --- Calculate counts for menu items ---
+num_inconsistencias = 0
+num_consulta_ativa = 0
+num_aguardando = 0
+num_tombado = 0
+
+if os.path.exists(NOVO_PATH) and os.path.exists(TOMB_PATH):
+    try:
+        carregar_bases_do_disco()
+        df = st.session_state.novo_df
+        tomb = st.session_state.tomb_df
+
+        # Inconsistencies count
+        filtrado_incons = df[
+            (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
+            (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
+            (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 101014, 137510]))
+        ].copy()
+
+        filtrado_incons['Origem'] = filtrado_incons.apply(
+            lambda row: "TOMBAMENTO" if not tomb[
+                (tomb['CPF Tomador'] == row['Número CPF/CNPJ']) &
+                (tomb['Número Contrato'] == str(row['Número Contrato Crédito']))
+            ].empty else "CONSULTE SISBR", axis=1
+        )
+        num_inconsistencias = len(filtrado_incons[filtrado_incons['Origem'] == 'CONSULTE SISBR'])
+
+        # Registros Consulta Ativa count
+        registros_consulta_ativa = []
+        for cpf_input in cpfs_ativos:
+            filtrado_ca = df[
+                (df['Número CPF/CNPJ'] == cpf_input) &
+                (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
+                (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
+                (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 101014, 137510]))
+            ]
+            for _, row in filtrado_ca.iterrows():
+                contrato = str(row['Número Contrato Crédito'])
+                if (cpf_input, contrato) not in tombados and (cpf_input, contrato) not in aguardando:
+                    registros_consulta_ativa.append(row)
+        num_consulta_ativa = len(registros_consulta_ativa)
+
+        # Aguardando Conclusão count
+        registros_aguardando = []
+        for cpf_input, contrato in aguardando:
+            match_df = df[
+                (df['Número CPF/CNPJ'] == cpf_input) &
+                (df['Número Contrato Crédito'].astype(str) == contrato)
+            ]
+            if not match_df.empty:
+                registros_aguardando.append(match_df.iloc[0])
+        num_aguardando = len(registros_aguardando)
+
+        # Tombado count
+        registros_tombados = []
+        for cpf_input, contrato in tombados:
+            match_df = df[
+                (df['Número CPF/CNPJ'] == cpf_input) &
+                (df['Número Contrato Crédito'].astype(str) == contrato)
+            ]
+            if not match_df.empty:
+                registros_tombados.append(match_df.iloc[0])
+        num_tombado = len(registros_tombados)
+
+    except Exception as e:
+        st.error(f"Erro ao carregar dados para os contadores: {e}")
+        num_inconsistencias = 0
+        num_consulta_ativa = 0
+        num_aguardando = 0
+        num_tombado = 0
+
+
 st.sidebar.header("Menu")
-menu = st.sidebar.radio("Navegação", [
+menu_options = [
     "Consulta Individual",
-    "Registros Consulta Ativa",
-    "Aguardando Conclusão",
-    "Tombado",
+    f"Registros Consulta Ativa ({num_consulta_ativa})",
+    f"Aguardando Conclusão ({num_aguardando})",
+    f"Tombado ({num_tombado})",
     "Resumo",
-    "Inconsistências",
+    f"Inconsistências ({num_inconsistencias})",
     "Atualizar Bases"
-])
+]
+menu = st.sidebar.radio("Navegação", menu_options)
 
 if menu == "Atualizar Bases":
     st.session_state.arquivo_novo = st.sidebar.file_uploader("Nova Base NovoEmprestimo.xlsx", type="xlsx")
@@ -154,8 +227,7 @@ else:
     carregar_bases_do_disco()
 
 
-
-if menu == "Consulta Individual":
+if "Consulta Individual" in menu:
     st.title("🔍 Consulta de Empréstimos por CPF")
     cpf_input = st.text_input("Digite o CPF (apenas números):", key="cpf_consulta").strip()
 
@@ -217,8 +289,8 @@ if menu == "Consulta Individual":
             st.warning("CPF inválido. Digite exatamente 11 números.")
 
 
-if menu == "Registros Consulta Ativa":
-    st.title("📋 Registros de Consulta Ativa")
+if "Registros Consulta Ativa" in menu:
+    st.title(f"📋 Registros de Consulta Ativa ({num_consulta_ativa})")
 
     df = st.session_state.novo_df
     tomb = st.session_state.tomb_df
@@ -342,8 +414,8 @@ if menu == "Resumo":
         st.info("Nenhum dado encontrado na base para resumo.")
 
 
-if menu == "Inconsistências":
-    st.title("🚨 Contratos sem Correspondência no Tombamento")
+if "Inconsistências" in menu:
+    st.title(f"🚨 Contratos sem Correspondência no Tombamento ({num_inconsistencias})")
 
     df = st.session_state.novo_df
     tomb = st.session_state.tomb_df
@@ -390,8 +462,8 @@ if menu == "Inconsistências":
 
 
 
-if menu == "Aguardando Conclusão":
-    st.title("⏳ Registros Aguardando Conclusão")
+if "Aguardando Conclusão" in menu:
+    st.title(f"⏳ Registros Aguardando Conclusão ({num_aguardando})")
 
     df = st.session_state.novo_df
     tomb = st.session_state.tomb_df
@@ -441,8 +513,8 @@ if menu == "Aguardando Conclusão":
         st.info("Nenhum registro marcado como Lançado Sisbr encontrado.")
 
 
-if menu == "Tombado":
-    st.title("📁 Registros Tombados")
+if "Tombado" in menu:
+    st.title(f"📁 Registros Tombados ({num_tombado})")
 
     df = st.session_state.novo_df
     tomb = st.session_state.tomb_df
