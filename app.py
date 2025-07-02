@@ -505,17 +505,33 @@ if "Inconsistências" in menu:
                 )
 
 
+
 if "Aguardando Conclusão" in menu:
-    st.title(f"⏳ Registros Aguardando Conclusão ({num_aguardando})")
+    # Forçar recarregamento atualizado
+    st.session_state['aguardando_set'] = carregar_aguardando_google()
+    st.session_state['tombados_set'] = carregar_tombados_google()
 
-    if not aguardando_conclusao_data.empty:
-        st.dataframe(aguardando_conclusao_data, use_container_width=True)
+    # Atualizar dados filtrados com base nos novos tombados
+    aguardando_df = pd.DataFrame(list(st.session_state['aguardando_set']), columns=['Número CPF/CNPJ', 'Número Contrato Crédito'])
+    aguardando_df['temp_key'] = list(zip(aguardando_df['Número CPF/CNPJ'], aguardando_df['Número Contrato Crédito']))
+    aguardando_df = aguardando_df[~aguardando_df['temp_key'].isin(st.session_state['tombados_set'])].drop(columns=['temp_key'])
 
-        unique_cpfs_ag = aguardando_conclusao_data['Número CPF/CNPJ'].unique().tolist()
+    merged_aguardando = aguardando_df.merge(
+        filtered_common_df,
+        on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
+        how='inner'
+    )
+
+    st.title(f"⏳ Registros Aguardando Conclusão ({len(merged_aguardando)})")
+
+    if not merged_aguardando.empty:
+        st.dataframe(merged_aguardando, use_container_width=True)
+
+        unique_cpfs_ag = merged_aguardando['Número CPF/CNPJ'].unique().tolist()
         cpf_escolhido = st.selectbox("CPF para tombar", unique_cpfs_ag, key="cpf_ag_key")
 
-        contratos_filtrados = aguardando_conclusao_data[
-            aguardando_conclusao_data['Número CPF/CNPJ'] == cpf_escolhido
+        contratos_filtrados = merged_aguardando[
+            merged_aguardando['Número CPF/CNPJ'] == cpf_escolhido
         ]['Número Contrato Crédito'].astype(str).tolist()
 
         contrato_escolhido = st.selectbox("Contrato para tombar:", contratos_filtrados, key=f"contrato_ag_{cpf_escolhido}")
@@ -523,16 +539,11 @@ if "Aguardando Conclusão" in menu:
         if st.button("Marcar como Tombado", key=f"btn_ag_{cpf_escolhido}_{contrato_escolhido}"):
             marcar_tombado(cpf_escolhido, contrato_escolhido)
             st.success(f"Contrato {contrato_escolhido} do CPF {cpf_escolhido} foi tombado com sucesso.")
-            # st.cache_data.clear() # Já é chamado dentro de marcar_tombado
-            # st.rerun() # Já é chamado dentro de marcar_tombado
     else:
         st.info("Nenhum registro encontrado.")
 
 
-if "Tombado" in menu:
-    st.title(f"📁 Registros Tombados ({num_tombado})")
-
-    if not tombado_data.empty:
+if not tombado_data.empty:
         # Merge with tomb for consignante info for display
         df_resultado = tombado_data.merge(
             tomb[['CPF Tomador', 'Número Contrato', 'CNPJ Empresa Consignante', 'Empresa Consignante']],
@@ -564,3 +575,4 @@ if "Tombado" in menu:
             st.info("Nenhum CPF disponível para seleção.")
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
+
