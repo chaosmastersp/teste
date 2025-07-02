@@ -275,6 +275,7 @@ if menu == "Registros Consulta Ativa":
         st.info("Nenhum registro disponível para Consulta Ativa.")
 
 
+
 if menu == "Resumo":
     st.title("📊 Resumo Consolidado por Consignante (Base Completa)")
 
@@ -308,20 +309,19 @@ if menu == "Resumo":
             "CPF": cpf,
             "Contrato": contrato,
             "Consulta Ativa": cpf in cpfs_ativos,
-            "Tombado": (cpf, contrato) in tombados
+            "Tombado": (cpf, contrato) in tombados,
+            "Aguardando": (cpf, contrato) in aguardando
         })
 
     if registros:
         df_registros = pd.DataFrame(registros)
 
-    df_registros["Aguardando"] = df_registros.apply(lambda x: (x["CPF"], x["Contrato"]) in aguardando, axis=1)
-
-    resumo = df_registros.groupby(["CNPJ Empresa Consignante", "Empresa Consignante"]).agg(
+        resumo = df_registros.groupby(["CNPJ Empresa Consignante", "Empresa Consignante"]).agg(
             Total_Cooperados=("CPF", "nunique"),
             Total_Contratos=("Contrato", "count"),
             Total_Consulta_Ativa=("Consulta Ativa", "sum"),
             Total_Tombado=("Tombado", "sum"),
-    Total_Aguardando_Conclusao=("Aguardando", "sum")
+            Total_Aguardando_Conclusao=("Aguardando", "sum")
         ).reset_index()
 
         st.dataframe(resumo)
@@ -340,7 +340,6 @@ if menu == "Resumo":
                 )
     else:
         st.info("Nenhum dado encontrado na base para resumo.")
-
 
 
 if menu == "Inconsistências":
