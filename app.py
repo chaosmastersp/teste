@@ -221,8 +221,6 @@ if menu == "Consulta Individual":
 if menu == "Registros Consulta Ativa":
     st.title("📋 Registros de Consulta Ativa")
 
-    total_ca = 0
-
     df = st.session_state.novo_df
     tomb = st.session_state.tomb_df
 
@@ -264,7 +262,6 @@ if menu == "Registros Consulta Ativa":
     if registros:
         df_resultado = pd.DataFrame(registros)
         total_ag = len(df_resultado)
-        total_ca = len(df_resultado)
         st.dataframe(df_resultado, use_container_width=True)
 
         cpfs_disponiveis = df_resultado['Número CPF/CNPJ'].unique().tolist()
@@ -484,7 +481,7 @@ if menu == "Tombado":
             })
 
     if registros:
-        st.warning(f"{total_ca} contratos marcados como Consulta Ativa encontrados.")
+        st.warning(f"{len(registros)} contratos marcados como Consulta Ativa encontrados.")
     st.dataframe(pd.DataFrame(registros))
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
