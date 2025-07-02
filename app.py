@@ -38,7 +38,8 @@ def carregar_tombados_google():
         values = tomb_sheet.get_all_values()
         if not values or len(values) < 2:
             return set()
-        return set((row[0], row[1]) for row in values[1:])  # (cpf, contrato)
+        # Normaliza os valores ao carregar para garantir consistência
+        return set((str(row[0]).strip(), str(row[1]).strip()) for row in values[1:])  # (cpf, contrato)
     except Exception as e:
         st.error(f"Erro ao carregar registros tombados: {e}")
         return set()
@@ -50,7 +51,8 @@ def carregar_aguardando_google():
         values = aguard_sheet.get_all_values()
         if not values or len(values) < 2:
             return set()
-        return set((row[0], row[1]) for row in values[1:])
+        # Normaliza os valores ao carregar para garantir consistência
+        return set((str(row[0]).strip(), str(row[1]).strip()) for row in values[1:])
     except Exception as e:
         st.error(f"Erro ao carregar registros aguardando: {e}")
         return set()
@@ -105,12 +107,14 @@ def marcar_tombado(cpf, contrato):
         
         found_and_removed = False # Flag to check if item was found and effectively "removed" from data
         new_data = []
+        # Normaliza o CPF e Contrato de entrada para comparação
         target_cpf = str(cpf).strip()
         target_contrato = str(contrato).strip()
 
         st.info(f"DEBUG: Procurando por (CPF: '{target_cpf}', Contrato: '{target_contrato}') para remover.") # Mensagem de depuração
         
         for row in data:
+            # Normaliza os valores da linha do sheet para comparação
             current_cpf_in_sheet = str(row[0]).strip()
             current_contrato_in_sheet = str(row[1]).strip()
             
@@ -144,6 +148,20 @@ def marcar_tombado(cpf, contrato):
             aguard_sheet.append_row(header) # Ensure header is present if nothing else is
             st.success(f"DEBUG: Contrato '{contrato}' do CPF '{cpf}' removido. Planilha 'aguardando' agora contém apenas o cabeçalho.")
             
+        # --- Verificação Pós-Remoção ---
+        st.info("DEBUG: Verificando se o registro foi realmente removido do Google Sheet...")
+        aguard_sheet_reloaded = client.open("consulta_ativa").worksheet("aguardando")
+        reloaded_values = aguard_sheet_reloaded.get_all_values()
+        
+        # Normaliza os valores recarregados para verificação
+        reloaded_set = set((str(row[0]).strip(), str(row[1]).strip()) for row in reloaded_values[1:]) if len(reloaded_values) > 1 else set()
+
+        if (target_cpf, target_contrato) not in reloaded_set:
+            st.success(f"DEBUG: Confirmação: Registro (CPF: '{target_cpf}', Contrato: '{target_contrato}') NÃO encontrado na planilha 'aguardando' após a remoção.")
+        else:
+            st.error(f"DEBUG: ALERTA: Registro (CPF: '{target_cpf}', Contrato: '{target_contrato}') AINDA ENCONTRADO na planilha 'aguardando' após a remoção. Pode haver um problema de sincronização ou permissão.")
+
+
     except Exception as e:
         st.error(f"ERRO CRÍTICO ao remover de 'aguardando': {e}")
         st.exception(e) # Show full traceback for better debugging
@@ -152,7 +170,6 @@ def marcar_tombado(cpf, contrato):
     st.session_state['aguardando_set'] = carregar_aguardando_google()
     st.session_state['tombados_set'] = carregar_tombados_google()
     st.rerun()
-
 
 
 def marcar_todos_contratos_tombados(cpf):
@@ -635,5 +652,6 @@ if not tombado_data.empty:
             st.info("Nenhum CPF disponível para seleção.")
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
+
 
 
