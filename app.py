@@ -176,6 +176,8 @@ if menu == "Consulta Individual":
 
 
 
+
+
 if menu == "Registros Consulta Ativa":
     st.title("📋 Registros de Consulta Ativa")
 
@@ -219,16 +221,21 @@ if menu == "Registros Consulta Ativa":
 
     if registros:
         df_resultado = pd.DataFrame(registros)
-        selected = st.dataframe(df_resultado, use_container_width=True)
+        st.dataframe(df_resultado, use_container_width=True)
 
-        selected_index = st.selectbox("Selecione o índice do contrato a tombar:", df_resultado.index.tolist())
-        if st.button("Marcar selecionado como Tombado"):
-            row = df_resultado.loc[selected_index]
-            marcar_tombado(row["Número CPF/CNPJ"], str(row["Número Contrato Crédito"]))
-            st.success("Contrato tombado com sucesso.")
+        cpfs_disponiveis = df_resultado['Número CPF/CNPJ'].unique().tolist()
+        cpf_escolhido = st.selectbox("Selecione o CPF para tombar todos os contratos associados:", cpfs_disponiveis)
+
+        if st.button("Marcar todos os contratos como Tombado"):
+            contratos = df_resultado[df_resultado['Número CPF/CNPJ'] == cpf_escolhido]['Número Contrato Crédito'].astype(str).tolist()
+            for contrato in contratos:
+                marcar_tombado(cpf_escolhido, contrato)
+            st.success(f"Todos os contratos do CPF {cpf_escolhido} foram tombados com sucesso.")
             st.rerun()
     else:
         st.info("Nenhum registro encontrado para os CPFs marcados como Consulta Ativa.")
+
+
 
 
     st.title("📋 Registros de Consulta Ativa")
@@ -419,5 +426,6 @@ if menu == "Tombado":
         st.dataframe(pd.DataFrame(registros))
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
+
 
 
