@@ -96,7 +96,7 @@ def salvar_arquivos(upload_novo, upload_tomb):
     carregar_bases_do_disco()
 
 st.sidebar.header("Menu")
-menu = st.sidebar.radio("Navegação", ["Consulta Individual", "Registros Consulta Ativa", "Tombado", "Resumo", "Inconsistências", "Atualizar Bases"])
+menu = menu = st.sidebar.radio("Navegação", [
 
 if menu == "Atualizar Bases":
     st.session_state.arquivo_novo = st.sidebar.file_uploader("Nova Base NovoEmprestimo.xlsx", type="xlsx")
