@@ -314,11 +314,14 @@ if menu == "Resumo":
     if registros:
         df_registros = pd.DataFrame(registros)
 
+    df_registros["Aguardando"] = df_registros.apply(lambda x: (x["CPF"], x["Contrato"]) in aguardando, axis=1)
+
         resumo = df_registros.groupby(["CNPJ Empresa Consignante", "Empresa Consignante"]).agg(
             Total_Cooperados=("CPF", "nunique"),
             Total_Contratos=("Contrato", "count"),
             Total_Consulta_Ativa=("Consulta Ativa", "sum"),
-            Total_Tombado=("Tombado", "sum")
+            Total_Tombado=("Tombado", "sum"),
+    Total_Aguardando_Conclusao=("Aguardando", "sum")
         ).reset_index()
 
         st.dataframe(resumo)
