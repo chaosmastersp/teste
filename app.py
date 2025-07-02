@@ -188,9 +188,7 @@ def marcar_todos_contratos_tombados(cpf):
 
         # Atualiza planilha aguardando com os dados restantes
         aguard_sheet.clear()
-        aguard_sheet.append_row(header)
-        for row in novos_dados:
-            aguard_sheet.append_row(row)
+        aguard_sheet.update("A1", [header] + novos_dados)
 
         # Atualiza planilha tombados
         try:
