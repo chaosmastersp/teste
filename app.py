@@ -174,11 +174,6 @@ if menu == "Consulta Individual":
                     st.success("✅ CPF marcado com sucesso.")
                     st.rerun()
 
-
-
-
-
-
 if menu == "Registros Consulta Ativa":
     st.title("📋 Registros de Consulta Ativa")
 
@@ -236,54 +231,7 @@ if menu == "Registros Consulta Ativa":
     else:
         st.info("Nenhum registro encontrado para os CPFs marcados como Consulta Ativa.")
 
-
-
-
-
-    st.title("📋 Registros de Consulta Ativa")
-
-    df = st.session_state.novo_df
-    tomb = st.session_state.tomb_df
-
-    registros = []
-
-    for cpf_input in cpfs_ativos:
-        filtrado = df[
-            (df['Número CPF/CNPJ'] == cpf_input) &
-            (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
-            (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
-            (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 101014, 137510]))
-        ]
-
-        for _, row in filtrado.iterrows():
-            contrato = str(row['Número Contrato Crédito'])
-            match = tomb[
-                (tomb['CPF Tomador'] == cpf_input) &
-                (tomb['Número Contrato'] == contrato)
-            ]
-
-            consignante = match['CNPJ Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
-            empresa = match['Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
-
-            registros.append({
-                "Número CPF/CNPJ": row['Número CPF/CNPJ'],
-                "Nome Cliente": row['Nome Cliente'],
-                "Número Contrato Crédito": contrato,
-                "Quantidade Parcelas Abertas": row['Quantidade Parcelas Abertas'],
-                "% Taxa Operação": row['% Taxa Operação'],
-                "Código Linha Crédito": row['Código Linha Crédito'],
-                "Nome Comercial": row['Nome Comercial'],
-                "Consignante": consignante,
-                "Empresa Consignante": empresa
-            })
-
-    if registros:
-        st.dataframe(pd.DataFrame(registros))
-    else:
-        st.info("Nenhum registro encontrado para os CPFs marcados como Consulta Ativa.")
-
-
-
+  
 if menu == "Resumo":
     st.title("📊 Resumo Consolidado por Consignante (Base Completa)")
 
