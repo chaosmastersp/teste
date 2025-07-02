@@ -178,6 +178,7 @@ if menu == "Consulta Individual":
 
 
 
+
 if menu == "Registros Consulta Ativa":
     st.title("📋 Registros de Consulta Ativa")
 
@@ -234,6 +235,7 @@ if menu == "Registros Consulta Ativa":
             st.rerun()
     else:
         st.info("Nenhum registro encontrado para os CPFs marcados como Consulta Ativa.")
+
 
 
 
