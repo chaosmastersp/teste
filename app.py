@@ -575,4 +575,3 @@ if not tombado_data.empty:
             st.info("Nenhum CPF disponível para seleção.")
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
-
