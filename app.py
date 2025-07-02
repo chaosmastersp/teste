@@ -95,10 +95,21 @@ def salvar_arquivos(upload_novo, upload_tomb):
         f.write(upload_tomb.read())
     carregar_bases_do_disco()
 
+
 st.sidebar.header("Menu")
 menu = st.sidebar.radio("Navegação", [
+    "Consulta Individual",
+    "Registros Consulta Ativa",
+    "Aguardando Conclusão",
+    "Tombado",
+    "Resumo",
+    "Inconsistências",
+    "Atualizar Bases"
+])
 
-if menu == "Atualizar Bases"]):
+menu = menu = st.sidebar.radio("Navegação", [
+
+if menu == "Atualizar Bases":
     st.session_state.arquivo_novo = st.sidebar.file_uploader("Nova Base NovoEmprestimo.xlsx", type="xlsx")
     st.session_state.arquivo_tomb = st.sidebar.file_uploader("Nova Base Tombamento.xlsx", type="xlsx")
     if st.sidebar.button("Atualizar"):
@@ -392,5 +403,6 @@ if menu == "Tombado":
         st.dataframe(pd.DataFrame(registros))
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
+
 
 
