@@ -101,41 +101,57 @@ def marcar_tombado(cpf, contrato):
         header = all_values[0]
         data = all_values[1:] # Actual data rows
         
-        st.info(f"DEBUG: Dados atuais em 'aguardando' (exceto cabeçalho): {data}") # Debug
-        st.info(f"DEBUG: Procurando por (CPF: '{str(cpf).strip()}', Contrato: '{str(contrato).strip()}') para remover.") # Debug
-
-        # FILTRAGEM CRÍTICA: Garante que a comparação seja sempre entre strings, sem espaços extras.
-        new_data = [
-            row for row in data 
-            if not (str(row[0]).strip() == str(cpf).strip() and str(row[1]).strip() == str(contrato).strip())
-        ]
+        st.info(f"DEBUG: Dados lidos de 'aguardando' (exceto cabeçalho): {data}")
         
-        st.info(f"DEBUG: Dados restantes em 'aguardando' após tentativa de remoção: {new_data}") # Debug
+        found_and_removed = False # Flag to check if item was found and effectively "removed" from data
+        new_data = []
+        target_cpf = str(cpf).strip()
+        target_contrato = str(contrato).strip()
+
+        st.info(f"DEBUG: Procurando por (CPF: '{target_cpf}', Contrato: '{target_contrato}') para remover.") # Mensagem de depuração
+        
+        for row in data:
+            current_cpf_in_sheet = str(row[0]).strip()
+            current_contrato_in_sheet = str(row[1]).strip()
+            
+            st.info(f"DEBUG: Comparando sheet row (CPF: '{current_cpf_in_sheet}', Contrato: '{current_contrato_in_sheet}') com target (CPF: '{target_cpf}', Contrato: '{target_contrato}')")
+
+            if current_cpf_in_sheet == target_cpf and current_contrato_in_sheet == target_contrato:
+                st.info(f"DEBUG: Correspondência encontrada para remover: CPF '{current_cpf_in_sheet}', Contrato '{current_contrato_in_sheet}'")
+                found_and_removed = True
+            else:
+                new_data.append(row)
+        
+        if not found_and_removed:
+            st.warning(f"DEBUG: Contrato (CPF: '{target_cpf}', Contrato: '{target_contrato}') NÃO encontrado na planilha 'aguardando' para remoção. Verifique os valores na planilha e no input.")
+
+        st.info(f"DEBUG: Dados restantes em 'aguardando' após a tentativa de remoção: {new_data}")
 
         # Recria a planilha com cabeçalho + dados válidos
         values_to_update = [header] + new_data
         
-        aguard_sheet.clear() # Limpa a planilha inteira antes de reescrever
+        st.info("DEBUG: Tentando aguard_sheet.clear()")
+        aguard_sheet.clear() # Clear the entire sheet
+        st.info("DEBUG: aguard_sheet.clear() concluído.")
         
-        if values_to_update and len(values_to_update) > 1: # Atualiza se houver dados (além do cabeçalho)
+        if values_to_update and len(values_to_update) > 0: # Ensure header is always written, and data if present
+            st.info(f"DEBUG: Tentando aguard_sheet.update('A1', {len(values_to_update)} linhas)")
             aguard_sheet.update("A1", values_to_update)
+            st.info("DEBUG: aguard_sheet.update() concluído.")
             st.success(f"DEBUG: Contrato '{contrato}' do CPF '{cpf}' removido da planilha 'aguardando' com sucesso.")
-        else: # Se não sobrou dados, garanta que o cabeçalho permaneça
-            aguard_sheet.clear()
-            aguard_sheet.append_row(header) # Mantém o cabeçalho
+        else: # This case should ideally not be hit if header is always included, but as a safeguard
+            st.warning("DEBUG: `values_to_update` estava vazio ou apenas com cabeçalho. Planilha 'aguardando' pode estar vazia.")
+            aguard_sheet.append_row(header) # Ensure header is present if nothing else is
             st.success(f"DEBUG: Contrato '{contrato}' do CPF '{cpf}' removido. Planilha 'aguardando' agora contém apenas o cabeçalho.")
             
-
     except Exception as e:
         st.error(f"ERRO CRÍTICO ao remover de 'aguardando': {e}")
+        st.exception(e) # Show full traceback for better debugging
 
-    # Invalida todos os caches de @st.cache_data
     st.cache_data.clear()
-    
-    # Força a atualização dos sets no session_state para refletir as mudanças imediatamente
     st.session_state['aguardando_set'] = carregar_aguardando_google()
     st.session_state['tombados_set'] = carregar_tombados_google()
-    st.rerun() # Força a reexecução do script para que as contagens e a exibição sejam atualizadas
+    st.rerun()
 
 
 def marcar_cpf_ativo(cpf):
