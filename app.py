@@ -145,7 +145,7 @@ if os.path.exists(NOVO_PATH) and os.path.exists(TOMB_PATH):
         num_inconsistencias = len(filtrado_incons[filtrado_incons['Origem'] == 'CONSULTE SISBR'])
 
         # Registros Consulta Ativa count
-        registros_consulta_ativa = []
+        registros_consulta_ativa_list = []
         for cpf_input in cpfs_ativos:
             filtrado_ca = df[
                 (df['Número CPF/CNPJ'] == cpf_input) &
@@ -156,30 +156,30 @@ if os.path.exists(NOVO_PATH) and os.path.exists(TOMB_PATH):
             for _, row in filtrado_ca.iterrows():
                 contrato = str(row['Número Contrato Crédito'])
                 if (cpf_input, contrato) not in tombados and (cpf_input, contrato) not in aguardando:
-                    registros_consulta_ativa.append(row)
-        num_consulta_ativa = len(registros_consulta_ativa)
+                    registros_consulta_ativa_list.append(row)
+        num_consulta_ativa = len(registros_consulta_ativa_list)
 
         # Aguardando Conclusão count
-        registros_aguardando = []
+        registros_aguardando_list = []
         for cpf_input, contrato in aguardando:
             match_df = df[
                 (df['Número CPF/CNPJ'] == cpf_input) &
                 (df['Número Contrato Crédito'].astype(str) == contrato)
             ]
             if not match_df.empty:
-                registros_aguardando.append(match_df.iloc[0])
-        num_aguardando = len(registros_aguardando)
+                registros_aguardando_list.append(match_df.iloc[0])
+        num_aguardando = len(registros_aguardando_list)
 
         # Tombado count
-        registros_tombados = []
+        registros_tombados_list = []
         for cpf_input, contrato in tombados:
             match_df = df[
                 (df['Número CPF/CNPJ'] == cpf_input) &
                 (df['Número Contrato Crédito'].astype(str) == contrato)
             ]
             if not match_df.empty:
-                registros_tombados.append(match_df.iloc[0])
-        num_tombado = len(registros_tombados)
+                registros_tombados_list.append(match_df.iloc[0])
+        num_tombado = len(registros_tombados_list)
 
     except Exception as e:
         st.error(f"Erro ao carregar dados para os contadores: {e}")
@@ -319,7 +319,7 @@ if "Registros Consulta Ativa" in menu:
             empresa = match['Empresa Consignante'].iloc[0] if not match.empty else "CONSULTE SISBR"
 
             registros.append({
-                "Número CPF/CNPJ": row['Número CPF/CNPJ'],
+                "Número CPF/CNPJ": row['Número CPF/CNNPJ'],
                 "Nome Cliente": row['Nome Cliente'],
                 "Número Contrato Crédito": contrato,
                 "Quantidade Parcelas Abertas": row['Quantidade Parcelas Abertas'],
@@ -335,14 +335,21 @@ if "Registros Consulta Ativa" in menu:
         st.dataframe(df_resultado, use_container_width=True)
 
         cpfs_disponiveis = df_resultado['Número CPF/CNPJ'].unique().tolist()
-        cpf_escolhido = st.selectbox("Selecione o CPF para marcar como Lançado Sisbr:", cpfs_disponiveis)
+        if cpfs_disponiveis:
+            cpf_escolhido = st.selectbox("Selecione o CPF para marcar:", cpfs_disponiveis, key="select_cpf_consulta_ativa")
 
-        if st.button("Marcar todos os contratos como Lançado Sisbr"):
-            contratos = df_resultado[df_resultado['Número CPF/CNPJ'] == cpf_escolhido]['Número Contrato Crédito'].astype(str).tolist()
-            for contrato in contratos:
-                marcar_aguardando(cpf_escolhido, contrato)
-            st.success(f"Todos os contratos do CPF {cpf_escolhido} foram movidos para 'Aguardando Conclusão'.")
-            st.rerun()
+            contratos_disponiveis = df_resultado[df_resultado['Número CPF/CNPJ'] == cpf_escolhido]['Número Contrato Crédito'].astype(str).tolist()
+            if contratos_disponiveis:
+                contrato_escolhido = st.selectbox("Selecione o Contrato para marcar como Lançado Sisbr:", contratos_disponiveis, key="select_contrato_consulta_ativa")
+
+                if st.button("Marcar como Lançado Sisbr"):
+                    marcar_aguardando(cpf_escolhido, contrato_escolhido)
+                    st.success(f"Contrato {contrato_escolhido} do CPF {cpf_escolhido} foi movido para 'Aguardando Conclusão'.")
+                    st.rerun()
+            else:
+                st.info("Nenhum contrato disponível para o CPF selecionado.")
+        else:
+            st.info("Nenhum CPF disponível para seleção.")
     else:
         st.info("Nenhum registro disponível para Consulta Ativa.")
 
@@ -401,7 +408,7 @@ if menu == "Resumo":
         with st.expander("📥 Exportar relação analítica"):
             import io
             with io.BytesIO() as buffer:
-                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                with pd.ExcelWriter(buffer, engine='openynpmxl') as writer:
                     df_registros.to_excel(writer, index=False, sheet_name="Relação Analítica")
                 buffer.seek(0)
                 st.download_button(
@@ -501,14 +508,21 @@ if "Aguardando Conclusão" in menu:
         st.dataframe(df_resultado, use_container_width=True)
 
         cpfs_disponiveis = df_resultado['Número CPF/CNPJ'].unique().tolist()
-        cpf_escolhido = st.selectbox("Selecione o CPF para tombar os contratos:", cpfs_disponiveis)
+        if cpfs_disponiveis:
+            cpf_escolhido = st.selectbox("Selecione o CPF para tombar:", cpfs_disponiveis, key="select_cpf_aguardando")
 
-        if st.button("Marcar todos os contratos como Tombado"):
-            contratos = df_resultado[df_resultado['Número CPF/CNPJ'] == cpf_escolhido]['Número Contrato Crédito'].astype(str).tolist()
-            for contrato in contratos:
-                marcar_tombado(cpf_escolhido, contrato)
-            st.success(f"Todos os contratos do CPF {cpf_escolhido} foram tombados com sucesso.")
-            st.rerun()
+            contratos_disponiveis = df_resultado[df_resultado['Número CPF/CNPJ'] == cpf_escolhido]['Número Contrato Crédito'].astype(str).tolist()
+            if contratos_disponiveis:
+                contrato_escolhido = st.selectbox("Selecione o Contrato para tombar:", contratos_disponiveis, key="select_contrato_aguardando")
+
+                if st.button("Marcar como Tombado"):
+                    marcar_tombado(cpf_escolhido, contrato_escolhido)
+                    st.success(f"Contrato {contrato_escolhido} do CPF {cpf_escolhido} foi tombado com sucesso.")
+                    st.rerun()
+            else:
+                st.info("Nenhum contrato disponível para o CPF selecionado.")
+        else:
+            st.info("Nenhum CPF disponível para seleção.")
     else:
         st.info("Nenhum registro marcado como Lançado Sisbr encontrado.")
 
@@ -548,5 +562,20 @@ if "Tombado" in menu:
 
     if registros:
         st.dataframe(pd.DataFrame(registros))
+
+        # Adicionando a funcionalidade de seleção para o menu "Tombado" (apenas para exibição/referência, pois não há ação de marcar aqui)
+        cpfs_disponiveis_tomb = [r[0] for r in tombados] # Usar a lista de tombados do Google Sheets
+        if cpfs_disponiveis_tomb:
+            cpf_escolhido_tomb = st.selectbox("Selecione o CPF para visualizar contratos tombados:", sorted(list(set(cpfs_disponiveis_tomb))), key="select_cpf_tombado")
+            
+            contratos_do_cpf_tomb = [contrato for cpf, contrato in tombados if cpf == cpf_escolhido_tomb]
+            if contratos_do_cpf_tomb:
+                contrato_escolhido_tomb = st.selectbox("Selecione o Contrato tombado:", sorted(list(set(contratos_do_cpf_tomb))), key="select_contrato_tombado")
+                st.info(f"Visualizando detalhes do contrato {contrato_escolhido_tomb} para o CPF {cpf_escolhido_tomb}.")
+            else:
+                st.info("Nenhum contrato tombado para o CPF selecionado.")
+        else:
+            st.info("Nenhum CPF disponível para seleção.")
+
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
