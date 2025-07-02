@@ -49,8 +49,30 @@ def marcar_cpf_ativo(cpf):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     sheet.append_row([cpf, timestamp])
 
+
+def carregar_aguardando_google():
+    try:
+        aguard_sheet = client.open("consulta_ativa").worksheet("aguardando")
+        values = aguard_sheet.get_all_values()
+        if not values or len(values) < 2:
+            return set()
+        return set((row[0], row[1]) for row in values[1:])
+    except:
+        return set()
+
+def marcar_aguardando(cpf, contrato):
+    try:
+        aguard_sheet = client.open("consulta_ativa").worksheet("aguardando")
+    except:
+        aguard_sheet = client.open("consulta_ativa").add_worksheet(title="aguardando", rows="1000", cols="3")
+        aguard_sheet.append_row(["cpf", "contrato", "timestamp"])
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    aguard_sheet.append_row([cpf, contrato, timestamp])
+
+
 cpfs_ativos = carregar_cpfs_ativos()
 tombados = carregar_tombados_google()
+aguardando = carregar_aguardando_google()
 
 # Inicialização do estado
 for key in ["autenticado", "arquivo_novo", "arquivo_tomb"]:
@@ -402,4 +424,3 @@ if menu == "Tombado":
         st.dataframe(pd.DataFrame(registros))
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
-
