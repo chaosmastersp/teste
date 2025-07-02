@@ -224,7 +224,6 @@ if menu == "Registros Consulta Ativa":
     total_ca = 0
 
     df = st.session_state.novo_df
-    total_tb = len(tombados)
     tomb = st.session_state.tomb_df
 
     registros = []
@@ -286,7 +285,6 @@ if menu == "Resumo":
     st.title("📊 Resumo Consolidado por Consignante (Base Completa)")
 
     df = st.session_state.novo_df
-    total_tb = len(tombados)
     tomb = st.session_state.tomb_df
 
     registros = []
@@ -353,7 +351,6 @@ if menu == "Inconsistências":
     st.title("🚨 Contratos sem Correspondência no Tombamento")
 
     df = st.session_state.novo_df
-    total_tb = len(tombados)
     tomb = st.session_state.tomb_df
 
     df['Número CPF/CNPJ'] = df['Número CPF/CNPJ'].astype(str).str.replace(r'\D', '', regex=True).str.zfill(11)
@@ -404,7 +401,6 @@ if menu == "Aguardando Conclusão":
     total_ag = 0
 
     df = st.session_state.novo_df
-    total_tb = len(tombados)
     tomb = st.session_state.tomb_df
 
     registros = []
@@ -437,7 +433,6 @@ if menu == "Aguardando Conclusão":
 
     if registros:
         df_resultado = pd.DataFrame(registros)
-        total_ca = len(df_resultado)
         st.dataframe(df_resultado, use_container_width=True)
 
         cpfs_disponiveis = df_resultado['Número CPF/CNPJ'].unique().tolist()
@@ -459,7 +454,6 @@ if menu == "Tombado":
     total_tb = 0
 
     df = st.session_state.novo_df
-    total_tb = len(tombados)
     tomb = st.session_state.tomb_df
 
     registros = []
@@ -494,4 +488,3 @@ if menu == "Tombado":
     st.dataframe(pd.DataFrame(registros))
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
-
