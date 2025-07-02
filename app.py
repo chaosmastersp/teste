@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import os
@@ -125,17 +124,26 @@ else:
     carregar_bases_do_disco()
 
 
+
 if menu == "Consulta Individual":
     st.title("🔍 Consulta de Empréstimos por CPF")
-    cpf_input = st.text_input("Digite o CPF (apenas números):").strip()
+    cpf_input = st.text_input("Digite o CPF (apenas números):", key="cpf_consulta").strip()
+
+    if "ultimo_cpf_consultado" not in st.session_state:
+        st.session_state.ultimo_cpf_consultado = None
 
     if st.button("Consultar"):
-        if cpf_input and len(cpf_input) == 11 and cpf_input.isdigit():
+        st.session_state.ultimo_cpf_consultado = cpf_input
+
+    if st.session_state.ultimo_cpf_consultado:
+        cpf_validado = st.session_state.ultimo_cpf_consultado
+
+        if cpf_validado and len(cpf_validado) == 11 and cpf_validado.isdigit():
             df = st.session_state.novo_df
             tomb = st.session_state.tomb_df
 
             filtrado = df[
-                (df['Número CPF/CNPJ'] == cpf_input) &
+                (df['Número CPF/CNPJ'] == cpf_validado) &
                 (df['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
                 (df['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
                 (~df['Código Linha Crédito'].isin([140073, 138358, 141011, 101014, 137510]))
@@ -148,7 +156,7 @@ if menu == "Consulta Individual":
                 for _, row in filtrado.iterrows():
                     contrato = str(row['Número Contrato Crédito'])
                     match = tomb[
-                        (tomb['CPF Tomador'] == cpf_input) &
+                        (tomb['CPF Tomador'] == cpf_validado) &
                         (tomb['Número Contrato'] == contrato)
                     ]
 
@@ -168,13 +176,16 @@ if menu == "Consulta Individual":
                     })
 
                 st.dataframe(pd.DataFrame(resultados))
-                if cpf_input in cpfs_ativos:
+                if cpf_validado in cpfs_ativos:
                     st.info("✅ CPF já marcado como Consulta Ativa.")
                 else:
                     if st.button("Marcar como Consulta Ativa"):
-                        marcar_cpf_ativo(cpf_input)
+                        marcar_cpf_ativo(cpf_validado)
                         st.success("✅ CPF marcado com sucesso.")
                         st.rerun()
+        else:
+            st.warning("CPF inválido. Digite exatamente 11 números.")
+
         else:
             st.warning("CPF inválido. Digite exatamente 11 números.")
 
