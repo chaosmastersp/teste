@@ -170,7 +170,6 @@ if menu == "Consulta Individual":
 
         if cpf_validado and len(cpf_validado) == 11 and cpf_validado.isdigit():
             df = st.session_state.novo_df
-    total_tb = len(tombados)
             tomb = st.session_state.tomb_df
 
             filtrado = df[
@@ -261,7 +260,6 @@ if menu == "Registros Consulta Ativa":
 
     if registros:
         df_resultado = pd.DataFrame(registros)
-        total_ag = len(df_resultado)
         st.dataframe(df_resultado, use_container_width=True)
 
         cpfs_disponiveis = df_resultado['Número CPF/CNPJ'].unique().tolist()
@@ -395,8 +393,6 @@ if menu == "Inconsistências":
 if menu == "Aguardando Conclusão":
     st.title("⏳ Registros Aguardando Conclusão")
 
-    total_ag = 0
-
     df = st.session_state.novo_df
     tomb = st.session_state.tomb_df
 
@@ -448,8 +444,6 @@ if menu == "Aguardando Conclusão":
 if menu == "Tombado":
     st.title("📁 Registros Tombados")
 
-    total_tb = 0
-
     df = st.session_state.novo_df
     tomb = st.session_state.tomb_df
 
@@ -481,7 +475,6 @@ if menu == "Tombado":
             })
 
     if registros:
-        st.warning(f"{len(registros)} contratos marcados como Consulta Ativa encontrados.")
-    st.dataframe(pd.DataFrame(registros))
+        st.dataframe(pd.DataFrame(registros))
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
