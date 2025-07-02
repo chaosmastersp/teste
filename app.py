@@ -107,7 +107,7 @@ menu = st.sidebar.radio("Navegação", [
     "Atualizar Bases"
 ])
 
-menu = menu = st.sidebar.radio("Navegação", [
+menu = st.sidebar.radio("Navegação", [
 
 if menu == "Atualizar Bases":
     st.session_state.arquivo_novo = st.sidebar.file_uploader("Nova Base NovoEmprestimo.xlsx", type="xlsx")
