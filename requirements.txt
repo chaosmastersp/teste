@@ -2,13 +2,11 @@ streamlit
 pandas
 gspread
 oauth2client
-openpyxl
-pytesseract
-pillow
 easyocr
-torch
+Pillow
 numpy
 opencv-python
 scikit-image
 deskew
 scipy
+openpyxl
