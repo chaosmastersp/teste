@@ -463,17 +463,6 @@ if "Tombado" in menu:
         ]
         st.dataframe(df_resultado[display_cols_tomb], use_container_width=True)
 
-        cpfs_disponiveis_tomb = df_resultado['Número CPF/CNPJ'].unique().tolist()
-        if cpfs_disponiveis_tomb:
-            cpf_escolhido_tomb = st.selectbox("Selecione o CPF para visualizar contratos tombados:", sorted(list(set(cpfs_disponiveis_tomb))), key="select_cpf_tombado_view")
-            
-            contratos_do_cpf_tomb = df_resultado[df_resultado['Número CPF/CNPJ'] == cpf_escolhido_tomb]['Número Contrato Crédito'].astype(str).tolist()
-            if contratos_do_cpf_tomb:
-                contrato_escolhido_tomb = st.selectbox("Selecione o Contrato tombado:", sorted(list(set(contratos_do_cpf_tomb))), key="select_contrato_tombado_view")
-                st.info(f"Detalhes do contrato {contrato_escolhido_tomb} para o CPF {cpf_escolhido_tomb} podem ser visualizados na tabela acima.")
-            else:
-                st.info("Nenhum contrato tombado para o CPF selecionado.")
-        else:
-            st.info("Nenhum CPF disponível para seleção.")
+        
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
