@@ -5,11 +5,15 @@ import json
 import gspread
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
-import easyocr # Importar easyocr
-from PIL import Image # Importar Image do PIL
-import re # Importar re
-import io # Importar io
-import numpy as np # Importar numpy para easyocr
+import easyocr
+from PIL import Image
+import re
+import io
+import numpy as np
+import cv2 # NOVO: Importar OpenCV
+from skimage.filters import threshold_local # NOVO: Para binarização adaptativa
+from deskew import determine_skew # NOVO: Para correção de inclinação
+from scipy.ndimage import rotate # NOVO: Para rotação da imagem (usado por deskew)
 
 st.set_page_config(page_title="Consulta de Empréstimos", layout="wide")
 
@@ -470,6 +474,15 @@ if "Tombado" in menu:
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
 
+# Inicializar o reader do EasyOCR uma vez (movido para o escopo global)
+os.environ["EASYOCR_MODEL_STORAGE_DIR"] = "./.easyocr"
+# Tente usar GPU se disponível para melhor performance
+try:
+    reader = easyocr.Reader(['pt'], gpu=True)
+except Exception as e:
+    st.warning(f"Não foi possível inicializar EasyOCR com GPU: {e}. Usando CPU.")
+    reader = easyocr.Reader(['pt'], gpu=False)
+
 # Funções de validação e correção de CPF (movidas para o escopo global)
 def validar_cpf(cpf):
     cpf = ''.join(filter(str.isdigit, cpf))
@@ -483,78 +496,171 @@ def validar_cpf(cpf):
     return True
 
 def tentar_corrigir_cpf(cpf_raw):
+    cpf_digits = ''.join(filter(str.isdigit, cpf_raw))
+    if len(cpf_digits) != 11:
+        return None # Não tenta corrigir se não tiver 11 dígitos numéricos
+
     # Tenta substituir dígitos comuns de erro e revalidar
-    substituicoes = {'1': '4', '4': '1'}
-    for i, c in enumerate(cpf_raw):
-        if c in substituicoes:
-            corrigido = cpf_raw[:i] + substituicoes[c] + cpf_raw[i+1:]
-            if validar_cpf(corrigido):
-                return corrigido
+    substituicoes_comuns = {
+        '1': '4', '4': '1', '0': '8', '8': '0', '5': '6', '6': '5',
+        '2': '7', '7': '2', '3': '9', '9': '3'
+    }
+    # Tenta corrigir um único dígito
+    for i in range(len(cpf_digits)):
+        original_char = cpf_digits[i]
+        if original_char in substituicoes_comuns:
+            corrected_char = substituicoes_comuns[original_char]
+            corrigido = list(cpf_digits)
+            corrigido[i] = corrected_char
+            corrigido_str = "".join(corrigido)
+            if validar_cpf(corrigido_str):
+                return corrigido_str
     return None
 
-# Inicializar o reader do EasyOCR uma vez (movido para o escopo global)
-os.environ["EASYOCR_MODEL_STORAGE_DIR"] = "./.easyocr"
-reader = easyocr.Reader(['pt'], gpu=False)
+def pre_processar_imagem(imagem_pil):
+    # Converte PIL Image para array numpy (OpenCV usa BGR por padrão)
+    img_np = np.array(imagem_pil.convert('RGB'))
+    img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
 
-def extrair_cpfs_de_imagem(imagem):
-    imagem_np = np.array(imagem)
-    result = reader.readtext(imagem_np)
-    texto = " ".join([res[1] for res in result])
-    return re.findall(r'\d{3}\.\d{3}\.\d{3}-\d{2}', texto)
+    # 1. Converter para escala de cinza
+    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+
+    # 2. Correção de inclinação (Deskew)
+    try:
+        angle = determine_skew(gray)
+        if abs(angle) > 0.5: # Apenas rotaciona se a inclinação for significativa (ajuste este valor se necessário)
+            # scipy.ndimage.rotate espera um array numpy
+            rotated = rotate(gray, angle, reshape=False, order=3, mode='constant', cval=255)
+            gray = rotated.astype(np.uint8)
+    except Exception as e:
+        st.warning(f"Erro ao corrigir inclinação da imagem: {e}")
+
+    # 3. Remoção de ruído (filtro gaussiano)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    # 4. Binarização adaptativa (melhor para diferentes condições de iluminação)
+    # Usamos skimage.filters.threshold_local para melhor controle
+    block_size = 35 # Tamanho da vizinhança para calcular o limiar (deve ser ímpar)
+    offset = 10   # Subtrai um valor do limiar médio para ajustar
+    local_thresh = threshold_local(blurred, block_size, offset=offset, method='gaussian')
+    binary_adaptive = blurred > local_thresh
+    
+    # Converte de volta para formato PIL Image para EasyOCR
+    processed_pil = Image.fromarray((binary_adaptive * 255).astype(np.uint8))
+    return processed_pil
+
+def extrair_cpfs_de_imagem(imagem_pil):
+    # Pré-processar a imagem
+    imagem_processada = pre_processar_imagem(imagem_pil)
+    imagem_np = np.array(imagem_processada)
+
+    # Usar allowlist para focar em dígitos e pontuação de CPF
+    # Ajustar parâmetros de reconhecimento
+    result = reader.readtext(
+        imagem_np,
+        allowlist='0123456789.-', # Permite apenas dígitos, ponto e hífen
+        paragraph=False, # Trata cada linha como um item separado
+        detail=1 # Retorna detalhes, incluindo confiança
+    )
+
+    cpfs_encontrados = []
+    for (bbox, text, prob) in result:
+        # Filtrar resultados com baixa confiança (ajuste o limiar conforme necessário)
+        # Um limiar de 0.7 (70%) é um bom ponto de partida, ajuste conforme a qualidade das suas imagens
+        if prob < 0.7:
+            continue
+
+        # Limpar o texto extraído para obter apenas dígitos
+        cleaned_text = re.sub(r'\D', '', text)
+
+        # Tentar encontrar CPFs de 11 dígitos
+        if len(cleaned_text) == 11:
+            cpfs_encontrados.append(cleaned_text)
+        else:
+            # Se não tiver 11 dígitos, tentar encontrar padrões mais flexíveis
+            # Ex: 3 dígitos, ponto, 3 dígitos, ponto, 3 dígitos, hífen, 2 dígitos
+            match_flexible = re.search(r'\d{3}[.-]?\d{3}[.-]?\d{3}[-]?\d{2}', text)
+            if match_flexible:
+                cpfs_encontrados.append(re.sub(r'\D', '', match_flexible.group(0))) # Limpa para apenas dígitos
+
+    return list(set(cpfs_encontrados)) # Retorna CPFs únicos e limpos
 
 
 if "Imagens" in menu:
     st.title("📷 Extração de CPFs via Imagem")
+    st.info("As imagens serão pré-processadas para melhorar a detecção de CPF.")
     imagens = st.file_uploader("Envie uma ou mais imagens contendo CPFs", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
     if imagens:
         resultados = []
         for img_file in imagens:
             try:
-                imagem = Image.open(img_file)
-                cpfs_extraidos = extrair_cpfs_de_imagem(imagem)
+                # Exibir a imagem original e a processada para depuração (opcional)
+                st.subheader(f"Processando: {img_file.name}")
+                col1, col2 = st.columns(2)
+                
+                imagem_original = Image.open(img_file)
+                col1.image(imagem_original, caption="Imagem Original", use_column_width=True)
 
-                for cpf_raw in cpfs_extraidos:
-                    cpf = re.sub(r'\D', '', cpf_raw)
-                    if len(cpf) != 11 or not validar_cpf(cpf):
-                        cpf_corrigido = tentar_corrigir_cpf(cpf)
-                        if cpf_corrigido and cpf_corrigido in df['Número CPF/CNPJ'].values:
-                            if cpf_corrigido not in cpfs_ativos:
-                                marcar_cpf_ativo(cpf_corrigido)
-                                resultados.append((cpf_raw + f" ➜ {cpf_corrigido}", "✅ Corrigido e marcado"))
+                # Pré-processar a imagem para exibição (a função extrair_cpfs_de_imagem fará o pré-processamento para o OCR)
+                imagem_processada_para_display = pre_processar_imagem(imagem_original)
+                col2.image(imagem_processada_para_display, caption="Imagem Pré-processada (para OCR)", use_column_width=True)
+
+                cpfs_extraidos = extrair_cpfs_de_imagem(imagem_original) # Passa a imagem original, a função de extração fará o pré-processamento
+
+                if not cpfs_extraidos:
+                    resultados.append((img_file.name, "Nenhum CPF detectado ou com confiança suficiente."))
+                    continue
+
+                for cpf_extraido_limpo in cpfs_extraidos: # cpf_extraido_limpo já vem sem formatação
+                    status_msg = ""
+                    # Formata o CPF para exibição no log
+                    cpf_formatado_original = f"{cpf_extraido_limpo[:3]}.{cpf_extraido_limpo[3:6]}.{cpf_extraido_limpo[6:9]}-{cpf_extraido_limpo[9:]}"
+
+                    if validar_cpf(cpf_extraido_limpo):
+                        if cpf_extraido_limpo in df['Número CPF/CNPJ'].values:
+                            if cpf_extraido_limpo not in cpfs_ativos:
+                                marcar_cpf_ativo(cpf_extraido_limpo)
+                                status_msg = "✅ Marcado com sucesso"
                             else:
-                                resultados.append((cpf_raw + f" ➜ {cpf_corrigido}", "ℹ️ Corrigido, já estava marcado"))
+                                status_msg = "ℹ️ Já estava marcado"
                         else:
-                            resultados.append((cpf_raw, "❌ CPF inválido ou não encontrado"))
-                        continue
-
-                    if cpf in df['Número CPF/CNPJ'].values:
-                        if cpf not in cpfs_ativos:
-                            marcar_cpf_ativo(cpf)
-                            resultados.append((cpf_raw, "✅ Marcado com sucesso"))
-                        else:
-                            resultados.append((cpf_raw, "ℹ️ Já estava marcado"))
+                            status_msg = "❌ CPF válido, mas não encontrado na base de empréstimos"
                     else:
-                        resultados.append((cpf_raw, "❌ CPF não encontrado na base"))
+                        cpf_corrigido = tentar_corrigir_cpf(cpf_extraido_limpo)
+                        if cpf_corrigido:
+                            if cpf_corrigido in df['Número CPF/CNPJ'].values:
+                                if cpf_corrigido not in cpfs_ativos:
+                                    marcar_cpf_ativo(cpf_corrigido)
+                                    status_msg = f"✅ Corrigido ({cpf_formatado_original} ➜ {cpf_corrigido[:3]}.{cpf_corrigido[3:6]}.{cpf_corrigido[6:9]}-{cpf_corrigido[9:]}) e marcado"
+                                else:
+                                    status_msg = f"ℹ️ Corrigido ({cpf_formatado_original} ➜ {cpf_corrigido[:3]}.{cpf_corrigido[3:6]}.{cpf_corrigido[6:9]}-{cpf_corrigido[9:]}), já estava marcado"
+                            else:
+                                status_msg = f"❌ Corrigido ({cpf_formatado_original} ➜ {cpf_corrigido[:3]}.{cpf_corrigido[3:6]}.{cpf_corrigido[6:9]}-{cpf_corrigido[9:]}), mas não encontrado na base"
+                        else:
+                            status_msg = f"❌ CPF inválido e não corrigível ({cpf_formatado_original})"
+                    
+                    resultados.append((cpf_formatado_original, status_msg))
+
             except Exception as e:
                 resultados.append((img_file.name, f"Erro ao processar imagem: {e}"))
+                st.error(f"Erro ao processar {img_file.name}: {e}")
 
         if resultados:
             st.subheader("📄 Log de Processamento")
-            df_resultados = pd.DataFrame(resultados, columns=["CPF", "Status"])
+            df_resultados = pd.DataFrame(resultados, columns=["CPF Detectado/Processado", "Status"])
             st.dataframe(df_resultados, use_container_width=True)
 
-            # Correção para o ValueError: Obtenha o valor binário do buffer
             excel_data = None
             with io.BytesIO() as buffer:
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     df_resultados.to_excel(writer, index=False, sheet_name="Log")
-                excel_data = buffer.getvalue() # Obtenha o conteúdo binário
+                excel_data = buffer.getvalue()
 
-            if excel_data: # Verifique se há dados antes de tentar baixar
+            if excel_data:
                 st.download_button(
                     label="📥 Baixar log em Excel",
-                    data=excel_data, # Passe os bytes diretamente
+                    data=excel_data,
                     file_name="log_cpfs_imagem.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
