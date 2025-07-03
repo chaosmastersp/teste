@@ -5,4 +5,5 @@ oauth2client
 openpyxl
 pytesseract
 pillow
-
+easyocr
+torch
