@@ -319,7 +319,6 @@ if "Registros Consulta Ativa" in menu:
     st.title(f"📋 Registros de Consulta Ativa ({num_consulta_ativa})")
 
     if not registros_consulta_ativa_data.empty:
-        st.title(f"📋 Registros de Consulta Ativa ({num_consulta_ativa})")
         cpf_input = st.text_input("Digite o CPF (apenas números):", key="cpf_ca_input").strip()
 
         if cpf_input and len(cpf_input) == 11:
@@ -423,7 +422,6 @@ if "Aguardando Conclusão" in menu:
     st.title(f"⏳ Registros Aguardando Conclusão ({num_aguardando})")
 
     if not aguardando_conclusao_data.empty:
-        st.title(f"⏳ Registros Aguardando Conclusão ({num_aguardando})")
         cpf_input = st.text_input("Digite o CPF (apenas números):", key="cpf_ag_input").strip()
 
         if cpf_input and len(cpf_input) == 11:
