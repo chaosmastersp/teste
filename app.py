@@ -57,6 +57,7 @@ def carregar_aguardando_google():
 
 # Functions that modify Google Sheets should not be cached, but their calls should invalidate relevant caches
 def marcar_tombado(cpf, contrato):
+    # Adiciona ao tombados
     try:
         tomb_sheet = client.open("consulta_ativa").worksheet("tombados")
     except:
@@ -64,7 +65,23 @@ def marcar_tombado(cpf, contrato):
         tomb_sheet.append_row(["cpf", "contrato", "timestamp"])
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     tomb_sheet.append_row([cpf, contrato, timestamp])
-    st.cache_data.clear() # Invalidate cache for tombados data
+
+    # Remove da aba aguardando, se existir
+    try:
+        aguard_sheet = client.open("consulta_ativa").worksheet("aguardando")
+        data = aguard_sheet.get_all_values()
+        header = data[0]
+        rows = data[1:]
+        nova_lista = [row for row in rows if not (row[0] == cpf and row[1] == contrato)]
+
+        aguard_sheet.clear()
+        aguard_sheet.append_row(header)
+        for row in nova_lista:
+            aguard_sheet.append_row(row)
+    except Exception as e:
+        st.warning(f"Erro ao remover da aba aguardando: {e}")
+
+    st.cache_data.clear()  # Invalida caches relacionados # Invalidate cache for tombados data
 
 def marcar_cpf_ativo(cpf):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
