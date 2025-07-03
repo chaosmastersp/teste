@@ -478,10 +478,14 @@ import io
 
 reader = easyocr.Reader(['pt'], gpu=False)
 
+
 def extrair_cpfs_de_imagem(imagem):
-    result = reader.readtext(imagem)
+    import numpy as np
+    imagem_np = np.array(imagem)
+    result = reader.readtext(imagem_np)
     texto = " ".join([res[1] for res in result])
     return re.findall(r'\d{3}\.\d{3}\.\d{3}-\d{2}', texto)
+
 
 if "Imagens" in menu:
     st.title("📷 Extração de CPFs via Imagem")
