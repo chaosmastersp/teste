@@ -3,3 +3,6 @@ pandas
 gspread
 oauth2client
 openpyxl
+pytesseract
+pillow
+
