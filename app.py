@@ -319,22 +319,23 @@ if "Registros Consulta Ativa" in menu:
     st.title(f"📋 Registros de Consulta Ativa ({num_consulta_ativa})")
 
     if not registros_consulta_ativa_data.empty:
+        st.title(f"📋 Registros de Consulta Ativa ({num_consulta_ativa})")
+        cpf_input = st.text_input("Digite o CPF (apenas números):", key="cpf_ca_input").strip()
+
+        if cpf_input and len(cpf_input) == 11:
+            contratos_filtrados = registros_consulta_ativa_data[
+                registros_consulta_ativa_data['Número CPF/CNPJ'] == cpf_input
+            ]['Número Contrato Crédito'].astype(str).tolist()
+
+            contratos_escolhidos = st.multiselect("Selecione os contratos para marcar:", contratos_filtrados)
+
+            if st.button("Marcar como Lançado Sisbr"):
+                for contrato in contratos_escolhidos:
+                    marcar_aguardando(cpf_input, contrato)
+                st.success(f"{len(contratos_escolhidos)} contrato(s) marcado(s) como 'Aguardando Conclusão'.")
+                st.rerun()
+
         st.dataframe(registros_consulta_ativa_data, use_container_width=True)
-
-        # Get unique CPFs and Contracts from the already calculated and filtered dataframe
-        unique_cpfs_ca = registros_consulta_ativa_data['Número CPF/CNPJ'].unique().tolist()
-        cpf_escolhido = st.selectbox("CPF para marcar como Lançado Sisbr", unique_cpfs_ca, key="cpf_ca_key")
-
-        contratos_filtrados = registros_consulta_ativa_data[
-            registros_consulta_ativa_data['Número CPF/CNPJ'] == cpf_escolhido
-        ]['Número Contrato Crédito'].astype(str).tolist()
-
-        contrato_escolhido = st.selectbox("Contrato para marcar:", contratos_filtrados, key=f"contrato_ca_{cpf_escolhido}")
-
-        if st.button("Marcar como Lançado Sisbr", key=f"btn_ca_{cpf_escolhido}_{contrato_escolhido}"):
-            marcar_aguardando(cpf_escolhido, contrato_escolhido)
-            st.success(f"Contrato {contrato_escolhido} do CPF {cpf_escolhido} foi movido para 'Aguardando Conclusão'.")
-            st.rerun()
     else:
         st.info("Nenhum registro disponível para Consulta Ativa.")
 
@@ -422,21 +423,23 @@ if "Aguardando Conclusão" in menu:
     st.title(f"⏳ Registros Aguardando Conclusão ({num_aguardando})")
 
     if not aguardando_conclusao_data.empty:
+        st.title(f"⏳ Registros Aguardando Conclusão ({num_aguardando})")
+        cpf_input = st.text_input("Digite o CPF (apenas números):", key="cpf_ag_input").strip()
+
+        if cpf_input and len(cpf_input) == 11:
+            contratos_filtrados = aguardando_conclusao_data[
+                aguardando_conclusao_data['Número CPF/CNPJ'] == cpf_input
+            ]['Número Contrato Crédito'].astype(str).tolist()
+
+            contratos_escolhidos = st.multiselect("Selecione os contratos para tombar:", contratos_filtrados)
+
+            if st.button("Marcar como Tombado"):
+                for contrato in contratos_escolhidos:
+                    marcar_tombado(cpf_input, contrato)
+                st.success(f"{len(contratos_escolhidos)} contrato(s) tombado(s) com sucesso.")
+                st.rerun()
+
         st.dataframe(aguardando_conclusao_data, use_container_width=True)
-
-        unique_cpfs_ag = aguardando_conclusao_data['Número CPF/CNPJ'].unique().tolist()
-        cpf_escolhido = st.selectbox("CPF para tombar", unique_cpfs_ag, key="cpf_ag_key")
-
-        contratos_filtrados = aguardando_conclusao_data[
-            aguardando_conclusao_data['Número CPF/CNPJ'] == cpf_escolhido
-        ]['Número Contrato Crédito'].astype(str).tolist()
-
-        contrato_escolhido = st.selectbox("Contrato para tombar:", contratos_filtrados, key=f"contrato_ag_{cpf_escolhido}")
-
-        if st.button("Marcar como Tombado", key=f"btn_ag_{cpf_escolhido}_{contrato_escolhido}"):
-            marcar_tombado(cpf_escolhido, contrato_escolhido)
-            st.success(f"Contrato {contrato_escolhido} do CPF {cpf_escolhido} foi tombado com sucesso.")
-            st.rerun()
     else:
         st.info("Nenhum registro encontrado.")
 
