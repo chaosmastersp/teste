@@ -600,4 +600,4 @@ if "Imagens" in menu:
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     df_resultados.to_excel(writer, index=False, sheet_name="Log")
                 buffer.seek(0)
-                st.download_button("📥 Baixar log em Excel", data=buffer, file_name="log_cpfs_imagem.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.download_button("📥 Baixar log em Excel", data=buffer, file_name="log_cpfs_imagem.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
