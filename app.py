@@ -250,6 +250,7 @@ menu_options = [
     f"Tombado ({num_tombado})",
     "Resumo",
     f"Inconsistências ({num_inconsistencias})",
+    "Imagens",
     "Atualizar Bases"
 ]
 menu = st.sidebar.radio("Navegação", menu_options)
@@ -466,3 +467,52 @@ if "Tombado" in menu:
         
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
+
+
+import pytesseract
+from PIL import Image
+import re
+import io
+
+def extrair_cpfs_de_imagem(imagem):
+    texto = pytesseract.image_to_string(imagem)
+    return re.findall(r'\d{3}\.\d{3}\.\d{3}-\d{2}', texto)
+
+if "Imagens" in menu:
+    st.title("📷 Extração de CPFs via Imagem")
+    imagens = st.file_uploader("Envie uma ou mais imagens contendo CPFs", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+
+    if imagens:
+        resultados = []
+        for img_file in imagens:
+            try:
+                imagem = Image.open(img_file)
+                cpfs_extraidos = extrair_cpfs_de_imagem(imagem)
+
+                for cpf_raw in cpfs_extraidos:
+                    cpf = re.sub(r'\D', '', cpf_raw)
+                    if len(cpf) != 11:
+                        resultados.append((cpf_raw, "CPF inválido"))
+                        continue
+
+                    if cpf in df['Número CPF/CNPJ'].values:
+                        if cpf not in cpfs_ativos:
+                            marcar_cpf_ativo(cpf)
+                            resultados.append((cpf_raw, "✅ Marcado com sucesso"))
+                        else:
+                            resultados.append((cpf_raw, "ℹ️ Já estava marcado"))
+                    else:
+                        resultados.append((cpf_raw, "❌ CPF não encontrado na base"))
+            except Exception as e:
+                resultados.append((img_file.name, f"Erro ao processar imagem: {e}"))
+
+        if resultados:
+            st.subheader("📄 Log de Processamento")
+            df_resultados = pd.DataFrame(resultados, columns=["CPF", "Status"])
+            st.dataframe(df_resultados, use_container_width=True)
+
+            with io.BytesIO() as buffer:
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    df_resultados.to_excel(writer, index=False, sheet_name="Log")
+                buffer.seek(0)
+                st.download_button("📥 Baixar log em Excel", data=buffer, file_name="log_cpfs_imagem.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
