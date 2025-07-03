@@ -5,6 +5,11 @@ import json
 import gspread
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
+import easyocr # Importar easyocr
+from PIL import Image # Importar Image do PIL
+import re # Importar re
+import io # Importar io
+import numpy as np # Importar numpy para easyocr
 
 st.set_page_config(page_title="Consulta de Empréstimos", layout="wide")
 
@@ -376,7 +381,6 @@ if menu == "Resumo":
         st.dataframe(resumo)
 
         with st.expander("📥 Exportar relação analítica"):
-            import io
             with io.BytesIO() as buffer:
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     df_registros[['CPF', 'Contrato', 'CNPJ Empresa Consignante', 'Empresa Consignante', 'Consulta Ativa', 'Tombado', 'Aguardando']].to_excel(writer, index=False, sheet_name="Relação Analítica")
@@ -404,7 +408,6 @@ if "Inconsistências" in menu:
         ])
 
         with st.expander("📥 Exportar inconsistências"):
-            import io
             with io.BytesIO() as buffer:
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     inconsistencias_data[[
@@ -467,14 +470,7 @@ if "Tombado" in menu:
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
 
-
-import os
-os.environ["EASYOCR_MODEL_STORAGE_DIR"] = "./.easyocr"
-import easyocr
-from PIL import Image
-import re
-import io
-
+# Funções de validação e correção de CPF (movidas para o escopo global)
 def validar_cpf(cpf):
     cpf = ''.join(filter(str.isdigit, cpf))
     if len(cpf) != 11 or cpf == cpf[0] * 11:
@@ -496,12 +492,11 @@ def tentar_corrigir_cpf(cpf_raw):
                 return corrigido
     return None
 
-
+# Inicializar o reader do EasyOCR uma vez (movido para o escopo global)
+os.environ["EASYOCR_MODEL_STORAGE_DIR"] = "./.easyocr"
 reader = easyocr.Reader(['pt'], gpu=False)
 
-
 def extrair_cpfs_de_imagem(imagem):
-    import numpy as np
     imagem_np = np.array(imagem)
     result = reader.readtext(imagem_np)
     texto = " ".join([res[1] for res in result])
@@ -531,9 +526,7 @@ if "Imagens" in menu:
                                 resultados.append((cpf_raw + f" ➜ {cpf_corrigido}", "ℹ️ Corrigido, já estava marcado"))
                         else:
                             resultados.append((cpf_raw, "❌ CPF inválido ou não encontrado"))
-                        # A linha 'continue' estava aqui, mas foi movida para fora do 'else' para garantir que o loop continue
-                        # após o tratamento de CPF inválido ou não encontrado.
-                        continue # Esta linha estava duplicada e mal indentada.
+                        continue
 
                     if cpf in df['Número CPF/CNPJ'].values:
                         if cpf not in cpfs_ativos:
@@ -551,8 +544,17 @@ if "Imagens" in menu:
             df_resultados = pd.DataFrame(resultados, columns=["CPF", "Status"])
             st.dataframe(df_resultados, use_container_width=True)
 
+            # Correção para o ValueError: Obtenha o valor binário do buffer
+            excel_data = None
             with io.BytesIO() as buffer:
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     df_resultados.to_excel(writer, index=False, sheet_name="Log")
-                buffer.seek(0)
-            st.download_button("📥 Baixar log em Excel", data=buffer, file_name="log_cpfs_imagem.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                excel_data = buffer.getvalue() # Obtenha o conteúdo binário
+
+            if excel_data: # Verifique se há dados antes de tentar baixar
+                st.download_button(
+                    label="📥 Baixar log em Excel",
+                    data=excel_data, # Passe os bytes diretamente
+                    file_name="log_cpfs_imagem.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
