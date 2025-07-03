@@ -377,6 +377,28 @@ if menu == "Resumo":
 
         with st.expander("📥 Exportar relação analítica"):
             import io
+
+def validar_cpf(cpf):
+    cpf = ''.join(filter(str.isdigit, cpf))
+    if len(cpf) != 11 or cpf == cpf[0] * 11:
+        return False
+    for i in range(9, 11):
+        soma = sum(int(cpf[j]) * ((i+1) - j) for j in range(i))
+        digito = ((soma * 10) % 11) % 10
+        if digito != int(cpf[i]):
+            return False
+    return True
+
+def tentar_corrigir_cpf(cpf_raw):
+    # Tenta substituir dígitos comuns de erro e revalidar
+    substituicoes = {'1': '4', '4': '1'}
+    for i, c in enumerate(cpf_raw):
+        if c in substituicoes:
+            corrigido = cpf_raw[:i] + substituicoes[c] + cpf_raw[i+1:]
+            if validar_cpf(corrigido):
+                return corrigido
+    return None
+
             with io.BytesIO() as buffer:
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     df_registros[['CPF', 'Contrato', 'CNPJ Empresa Consignante', 'Empresa Consignante', 'Consulta Ativa', 'Tombado', 'Aguardando']].to_excel(writer, index=False, sheet_name="Relação Analítica")
@@ -405,6 +427,28 @@ if "Inconsistências" in menu:
 
         with st.expander("📥 Exportar inconsistências"):
             import io
+
+def validar_cpf(cpf):
+    cpf = ''.join(filter(str.isdigit, cpf))
+    if len(cpf) != 11 or cpf == cpf[0] * 11:
+        return False
+    for i in range(9, 11):
+        soma = sum(int(cpf[j]) * ((i+1) - j) for j in range(i))
+        digito = ((soma * 10) % 11) % 10
+        if digito != int(cpf[i]):
+            return False
+    return True
+
+def tentar_corrigir_cpf(cpf_raw):
+    # Tenta substituir dígitos comuns de erro e revalidar
+    substituicoes = {'1': '4', '4': '1'}
+    for i, c in enumerate(cpf_raw):
+        if c in substituicoes:
+            corrigido = cpf_raw[:i] + substituicoes[c] + cpf_raw[i+1:]
+            if validar_cpf(corrigido):
+                return corrigido
+    return None
+
             with io.BytesIO() as buffer:
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     inconsistencias_data[[
@@ -476,6 +520,28 @@ from PIL import Image
 import re
 import io
 
+def validar_cpf(cpf):
+    cpf = ''.join(filter(str.isdigit, cpf))
+    if len(cpf) != 11 or cpf == cpf[0] * 11:
+        return False
+    for i in range(9, 11):
+        soma = sum(int(cpf[j]) * ((i+1) - j) for j in range(i))
+        digito = ((soma * 10) % 11) % 10
+        if digito != int(cpf[i]):
+            return False
+    return True
+
+def tentar_corrigir_cpf(cpf_raw):
+    # Tenta substituir dígitos comuns de erro e revalidar
+    substituicoes = {'1': '4', '4': '1'}
+    for i, c in enumerate(cpf_raw):
+        if c in substituicoes:
+            corrigido = cpf_raw[:i] + substituicoes[c] + cpf_raw[i+1:]
+            if validar_cpf(corrigido):
+                return corrigido
+    return None
+
+
 reader = easyocr.Reader(['pt'], gpu=False)
 
 
@@ -500,7 +566,17 @@ if "Imagens" in menu:
 
                 for cpf_raw in cpfs_extraidos:
                     cpf = re.sub(r'\D', '', cpf_raw)
-                    if len(cpf) != 11:
+                    if len(cpf) != 11 or not validar_cpf(cpf):
+                        cpf_corrigido = tentar_corrigir_cpf(cpf)
+                        if cpf_corrigido and cpf_corrigido in df['Número CPF/CNPJ'].values:
+                            if cpf_corrigido not in cpfs_ativos:
+                                marcar_cpf_ativo(cpf_corrigido)
+                                resultados.append((cpf_raw + f" ➜ {cpf_corrigido}", "✅ Corrigido e marcado"))
+                            else:
+                                resultados.append((cpf_raw + f" ➜ {cpf_corrigido}", "ℹ️ Corrigido, já estava marcado"))
+                        else:
+                            resultados.append((cpf_raw, "❌ CPF inválido ou não encontrado"))
+                        continue
                         resultados.append((cpf_raw, "CPF inválido"))
                         continue
 
