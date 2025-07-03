@@ -469,6 +469,8 @@ if "Tombado" in menu:
         st.info("Nenhum contrato marcado como tombado encontrado.")
 
 
+import os
+os.environ["EASYOCR_MODEL_STORAGE_DIR"] = "./.easyocr"
 import easyocr
 from PIL import Image
 import re
