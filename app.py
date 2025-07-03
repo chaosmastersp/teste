@@ -377,28 +377,6 @@ if menu == "Resumo":
 
         with st.expander("📥 Exportar relação analítica"):
             import io
-
-def validar_cpf(cpf):
-    cpf = ''.join(filter(str.isdigit, cpf))
-    if len(cpf) != 11 or cpf == cpf[0] * 11:
-        return False
-    for i in range(9, 11):
-        soma = sum(int(cpf[j]) * ((i+1) - j) for j in range(i))
-        digito = ((soma * 10) % 11) % 10
-        if digito != int(cpf[i]):
-            return False
-    return True
-
-def tentar_corrigir_cpf(cpf_raw):
-    # Tenta substituir dígitos comuns de erro e revalidar
-    substituicoes = {'1': '4', '4': '1'}
-    for i, c in enumerate(cpf_raw):
-        if c in substituicoes:
-            corrigido = cpf_raw[:i] + substituicoes[c] + cpf_raw[i+1:]
-            if validar_cpf(corrigido):
-                return corrigido
-    return None
-
             with io.BytesIO() as buffer:
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     df_registros[['CPF', 'Contrato', 'CNPJ Empresa Consignante', 'Empresa Consignante', 'Consulta Ativa', 'Tombado', 'Aguardando']].to_excel(writer, index=False, sheet_name="Relação Analítica")
@@ -427,28 +405,6 @@ if "Inconsistências" in menu:
 
         with st.expander("📥 Exportar inconsistências"):
             import io
-
-def validar_cpf(cpf):
-    cpf = ''.join(filter(str.isdigit, cpf))
-    if len(cpf) != 11 or cpf == cpf[0] * 11:
-        return False
-    for i in range(9, 11):
-        soma = sum(int(cpf[j]) * ((i+1) - j) for j in range(i))
-        digito = ((soma * 10) % 11) % 10
-        if digito != int(cpf[i]):
-            return False
-    return True
-
-def tentar_corrigir_cpf(cpf_raw):
-    # Tenta substituir dígitos comuns de erro e revalidar
-    substituicoes = {'1': '4', '4': '1'}
-    for i, c in enumerate(cpf_raw):
-        if c in substituicoes:
-            corrigido = cpf_raw[:i] + substituicoes[c] + cpf_raw[i+1:]
-            if validar_cpf(corrigido):
-                return corrigido
-    return None
-
             with io.BytesIO() as buffer:
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     inconsistencias_data[[
@@ -508,7 +464,6 @@ if "Tombado" in menu:
         ]
         st.dataframe(df_resultado[display_cols_tomb], use_container_width=True)
 
-        
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
 
@@ -576,9 +531,9 @@ if "Imagens" in menu:
                                 resultados.append((cpf_raw + f" ➜ {cpf_corrigido}", "ℹ️ Corrigido, já estava marcado"))
                         else:
                             resultados.append((cpf_raw, "❌ CPF inválido ou não encontrado"))
-                        continue
-                        resultados.append((cpf_raw, "CPF inválido"))
-                        continue
+                        # A linha 'continue' estava aqui, mas foi movida para fora do 'else' para garantir que o loop continue
+                        # após o tratamento de CPF inválido ou não encontrado.
+                        continue # Esta linha estava duplicada e mal indentada.
 
                     if cpf in df['Número CPF/CNPJ'].values:
                         if cpf not in cpfs_ativos:
