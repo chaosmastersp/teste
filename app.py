@@ -469,13 +469,16 @@ if "Tombado" in menu:
         st.info("Nenhum contrato marcado como tombado encontrado.")
 
 
-import pytesseract
+import easyocr
 from PIL import Image
 import re
 import io
 
+reader = easyocr.Reader(['pt'], gpu=False)
+
 def extrair_cpfs_de_imagem(imagem):
-    texto = pytesseract.image_to_string(imagem)
+    result = reader.readtext(imagem)
+    texto = " ".join([res[1] for res in result])
     return re.findall(r'\d{3}\.\d{3}\.\d{3}-\d{2}', texto)
 
 if "Imagens" in menu:
