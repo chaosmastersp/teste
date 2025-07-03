@@ -7,3 +7,8 @@ pytesseract
 pillow
 easyocr
 torch
+numpy
+opencv-python
+scikit-image
+deskew
+scipy
