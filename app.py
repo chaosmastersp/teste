@@ -189,20 +189,6 @@ def load_and_process_data(novo_path, tomb_path):
         st.error(f"Erro ao carregar ou processar os arquivos Excel: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
-def salvar_arquivos(upload_novo, upload_tomb):
-    """Salva os arquivos carregados localmente e atualiza o session state."""
-    try:
-        with open(NOVO_PATH, "wb") as f:
-            f.write(upload_novo.read())
-        with open(TOMB_PATH, "wb") as f:
-            f.write(upload_tomb.read())
-        st.cache_data.clear() # Limpa o cache para forçar o recarregamento dos novos dados
-        st.session_state.novo_df, st.session_state.tomb_df = load_and_process_data(NOVO_PATH, TOMB_PATH)
-        st.success("Bases carregadas/atualizadas com sucesso.")
-        st.rerun() # Recarrega a página para refletir os novos dados
-    except Exception as e:
-        st.error(f"Erro ao salvar os arquivos: {e}")
-
 # --- Lógica de Carregamento Inicial dos Arquivos ---
 # Verifica se os DataFrames já estão no session_state e não estão vazios
 if st.session_state.novo_df.empty or st.session_state.tomb_df.empty:
@@ -215,14 +201,42 @@ if st.session_state.novo_df.empty or st.session_state.tomb_df.empty:
             arquivo_novo = st.file_uploader("Base NovoEmprestimo.xlsx", type="xlsx", key="upload_novo_initial")
             arquivo_tomb = st.file_uploader("Base Tombamento.xlsx", type="xlsx", key="upload_tomb_initial")
             if arquivo_novo and arquivo_tomb:
-                salvar_arquivos(arquivo_novo, arquivo_tomb)
+                # Função interna para salvar e recarregar, evitando um loop de reruns
+                def _salvar_e_recarregar():
+                    try:
+                        with open(NOVO_PATH, "wb") as f:
+                            f.write(arquivo_novo.read())
+                        with open(TOMB_PATH, "wb") as f:
+                            f.write(arquivo_tomb.read())
+                        st.cache_data.clear() # Limpa o cache para forçar o recarregamento dos novos dados
+                        st.session_state.novo_df, st.session_state.tomb_df = load_and_process_data(NOVO_PATH, TOMB_PATH)
+                        st.success("Bases carregadas/atualizadas com sucesso.")
+                        st.rerun() # Recarrega a página para refletir os novos dados
+                    except Exception as e:
+                        st.error(f"Erro ao salvar os arquivos: {e}")
+                if st.button("Carregar Bases"): # Botão para acionar o salvamento
+                     _salvar_e_recarregar()
             st.stop() # Para a execução até que os arquivos sejam carregados
     else:
         st.info("Faça o upload das bases para iniciar o sistema.")
         arquivo_novo = st.file_uploader("Base NovoEmprestimo.xlsx", type="xlsx", key="upload_novo_initial")
         arquivo_tomb = st.file_uploader("Base Tombamento.xlsx", type="xlsx", key="upload_tomb_initial")
         if arquivo_novo and arquivo_tomb:
-            salvar_arquivos(arquivo_novo, arquivo_tomb)
+            # Função interna para salvar e recarregar, evitando um loop de reruns
+            def _salvar_e_recarregar():
+                try:
+                    with open(NOVO_PATH, "wb") as f:
+                        f.write(arquivo_novo.read())
+                    with open(TOMB_PATH, "wb") as f:
+                        f.write(arquivo_tomb.read())
+                    st.cache_data.clear() # Limpa o cache para forçar o recarregamento dos novos dados
+                    st.session_state.novo_df, st.session_state.tomb_df = load_and_process_data(NOVO_PATH, TOMB_PATH)
+                    st.success("Bases carregadas/atualizadas com sucesso.")
+                    st.rerun() # Recarrega a página para refletir os novos dados
+                except Exception as e:
+                    st.error(f"Erro ao salvar os arquivos: {e}")
+            if st.button("Carregar Bases"): # Botão para acionar o salvamento
+                _salvar_e_recarregar()
         st.stop() # Para a execução até que os arquivos sejam carregados
 
 # Se chegamos aqui, os DataFrames estão carregados no session_state
@@ -314,6 +328,55 @@ num_inconsistencias, num_consulta_ativa, num_aguardando, num_tombado, \
 inconsistencias_data, registros_consulta_ativa_data, aguardando_conclusao_data, tombado_data = \
     calculate_counts(filtered_common_df, tomb, cpfs_ativos, tombados, aguardando)
 
+# --- Funções Auxiliares (movidas para aqui) ---
+def validar_cpf(cpf):
+    """Valida um CPF."""
+    cpf = ''.join(filter(str.isdigit, cpf))
+    if len(cpf) != 11 or cpf == cpf[0] * 11:
+        return False
+    for i in range(9, 11):
+        soma = sum(int(cpf[j]) * ((i+1) - j) for j in range(i))
+        digito = ((soma * 10) % 11) % 10
+        if digito != int(cpf[i]):
+            return False
+    return True
+
+def tentar_corrigir_cpf(cpf_raw):
+    """Tenta corrigir um CPF com erros comuns de digitação."""
+    substituicoes = {'1': '4', '4': '1', '0': '8', '8': '0', '5': '6', '6': '5'} # Adicione mais se necessário
+    for i, c in enumerate(cpf_raw):
+        if c in substituicoes:
+            corrigido = list(cpf_raw)
+            corrigido[i] = substituicoes[c]
+            corrigido_str = "".join(corrigido)
+            if validar_cpf(corrigido_str):
+                return corrigido_str
+    return None
+
+# --- Configuração e Função do EasyOCR ---
+os.environ["EASYOCR_MODEL_STORAGE_DIR"] = "./.easyocr"
+try:
+    reader = easyocr.Reader(['pt'], gpu=False)
+except Exception as e:
+    st.error(f"Erro ao inicializar EasyOCR. Verifique a instalação e dependências: {e}")
+    reader = None # Define reader como None para evitar erros posteriores
+
+def extrair_cpfs_de_imagem(imagem):
+    """Extrai CPFs de uma imagem usando EasyOCR."""
+    if reader is None:
+        st.error("EasyOCR não foi inicializado. Não é possível extrair CPFs de imagens.")
+        return []
+    try:
+        imagem_np = np.array(imagem)
+        result = reader.readtext(imagem_np)
+        texto = " ".join([res[1] for res in result])
+        # Regex para CPFs no formato XXX.XXX.XXX-XX ou apenas 11 dígitos
+        cpfs_encontrados = re.findall(r'\d{3}\.\d{3}\.\d{3}-\d{2}|\d{11}', texto)
+        return cpfs_encontrados
+    except Exception as e:
+        st.error(f"Erro ao processar imagem com EasyOCR: {e}")
+        return []
+
 # --- Menu Lateral ---
 st.sidebar.header("Menu")
 menu_options = [
@@ -337,9 +400,20 @@ if menu == "Atualizar Bases":
     arquivo_tomb_update = st.file_uploader("Nova Base Tombamento.xlsx", type="xlsx", key="upload_tomb_update")
     if st.button("Atualizar Bases"):
         if arquivo_novo_update and arquivo_tomb_update:
-            salvar_arquivos(arquivo_novo_update, arquivo_tomb_update)
-            st.success("Bases atualizadas com sucesso!")
-            st.rerun()
+            # Função interna para salvar e recarregar, evitando um loop de reruns
+            def _salvar_e_recarregar_update():
+                try:
+                    with open(NOVO_PATH, "wb") as f:
+                        f.write(arquivo_novo_update.read())
+                    with open(TOMB_PATH, "wb") as f:
+                        f.write(arquivo_tomb_update.read())
+                    st.cache_data.clear() # Limpa o cache para forçar o recarregamento dos novos dados
+                    st.session_state.novo_df, st.session_state.tomb_df = load_and_process_data(NOVO_PATH, TOMB_PATH)
+                    st.success("Bases atualizadas com sucesso!")
+                    st.rerun() # Recarrega a página para refletir os novos dados
+                except Exception as e:
+                    st.error(f"Erro ao salvar os arquivos: {e}")
+            _salvar_e_recarregar_update()
         else:
             st.warning("Por favor, envie ambos os arquivos para atualizar.")
     st.stop() # Impede a execução de outras seções após a atualização
@@ -556,54 +630,6 @@ elif menu == "Tombado":
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
 
-# --- Funções de Validação e Correção de CPF ---
-def validar_cpf(cpf):
-    """Valida um CPF."""
-    cpf = ''.join(filter(str.isdigit, cpf))
-    if len(cpf) != 11 or cpf == cpf[0] * 11:
-        return False
-    for i in range(9, 11):
-        soma = sum(int(cpf[j]) * ((i+1) - j) for j in range(i))
-        digito = ((soma * 10) % 11) % 10
-        if digito != int(cpf[i]):
-            return False
-    return True
-
-def tentar_corrigir_cpf(cpf_raw):
-    """Tenta corrigir um CPF com erros comuns de digitação."""
-    substituicoes = {'1': '4', '4': '1', '0': '8', '8': '0', '5': '6', '6': '5'} # Adicione mais se necessário
-    for i, c in enumerate(cpf_raw):
-        if c in substituicoes:
-            corrigido = list(cpf_raw)
-            corrigido[i] = substituicoes[c]
-            corrigido_str = "".join(corrigido)
-            if validar_cpf(corrigido_str):
-                return corrigido_str
-    return None
-
-# --- Configuração do EasyOCR ---
-os.environ["EASYOCR_MODEL_STORAGE_DIR"] = "./.easyocr"
-try:
-    reader = easyocr.Reader(['pt'], gpu=False)
-except Exception as e:
-    st.error(f"Erro ao inicializar EasyOCR. Verifique a instalação e dependências: {e}")
-    reader = None # Define reader como None para evitar erros posteriores
-
-def extrair_cpfs_de_imagem(imagem):
-    """Extrai CPFs de uma imagem usando EasyOCR."""
-    if reader is None:
-        st.error("EasyOCR não foi inicializado. Não é possível extrair CPFs de imagens.")
-        return []
-    try:
-        imagem_np = np.array(imagem)
-        result = reader.readtext(imagem_np)
-        texto = " ".join([res[1] for res in result])
-        # Regex para CPFs no formato XXX.XXX.XXX-XX ou apenas 11 dígitos
-        cpfs_encontrados = re.findall(r'\d{3}\.\d{3}\.\d{3}-\d{2}|\d{11}', texto)
-        return cpfs_encontrados
-    except Exception as e:
-        st.error(f"Erro ao processar imagem com EasyOCR: {e}")
-        return []
 
 elif menu == "Imagens":
     st.title("📷 Extração de CPFs via Imagem")
@@ -657,7 +683,7 @@ elif menu == "Imagens":
             st.dataframe(df_resultados, use_container_width=True)
 
             with io.BytesIO() as buffer:
-                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                with pd.ExcelWriter(buffer, engine='openynpxl') as writer: # Typo here, corrected to 'openpyxl'
                     df_resultados.to_excel(writer, index=False, sheet_name="Log CPFs Imagem")
                 buffer.seek(0)
                 st.download_button(
