@@ -5,63 +5,51 @@ import json
 import gspread
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
-import easyocr
-from PIL import Image
-import re
-import io
-import numpy as np
+import easyocr # Importar easyocr
+from PIL import Image # Importar Image do PIL
+import re # Importar re
+import io # Importar io
+import numpy as np # Importar numpy para easyocr
 
 st.set_page_config(page_title="Consulta de Empréstimos", layout="wide")
 
-# --- Configuração do Google Sheets ---
+# Google Sheets Setup - Use st.cache_resource for the gspread client
 @st.cache_resource
 def get_gspread_client():
-    """
-    Retorna o cliente gspread autorizado.
-    Armazenado em cache para evitar autenticação repetida.
-    """
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    try:
-        creds_dict = json.loads(st.secrets["gspread"]["json"])
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-        client = gspread.authorize(creds)
-        return client
-    except Exception as e:
-        st.error(f"Erro ao autenticar com Google Sheets. Verifique suas credenciais: {e}")
-        st.stop() # Impede a execução do restante do script se a autenticação falhar
+    creds_dict = json.loads(st.secrets["gspread"]["json"])
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client = gspread.authorize(creds)
+    return client
 
 client = get_gspread_client()
 
-# --- Funções de Carregamento de Dados do Google Sheets (com cache) ---
-@st.cache_data(ttl=300) # Cache por 5 minutos
+@st.cache_data(ttl=300) # Cache for 5 minutes to keep data relatively fresh
 def carregar_cpfs_ativos():
-    """Carrega CPFs ativos da planilha 'consulta_ativa'."""
     try:
         sheet = client.open("consulta_ativa").sheet1
         values = sheet.get_all_values()
         if not values or len(values) < 2:
             return []
-        return [row[0] for row in values[1:]]
+        return [row[0] for row in values[1:]]  # Ignora cabeçalho
     except Exception as e:
-        st.error(f"Erro ao carregar CPFs ativos do Google Sheets: {e}")
+        st.error(f"Erro ao carregar CPFs ativos: {e}")
         return []
 
 @st.cache_data(ttl=300)
 def carregar_tombados_google():
-    """Carrega registros tombados da planilha 'tombados'."""
     try:
         tomb_sheet = client.open("consulta_ativa").worksheet("tombados")
         values = tomb_sheet.get_all_values()
         if not values or len(values) < 2:
             return set()
-        return set((row[0], row[1]) for row in values[1:])
+        return set((row[0], row[1]) for row in values[1:])  # (cpf, contrato)
     except Exception as e:
-        st.error(f"Erro ao carregar registros tombados do Google Sheets: {e}")
+        st.error(f"Erro ao carregar registros tombados: {e}")
         return set()
 
 @st.cache_data(ttl=300)
 def carregar_aguardando_google():
-    """Carrega registros aguardando conclusão da planilha 'aguardando'."""
     try:
         aguard_sheet = client.open("consulta_ativa").worksheet("aguardando")
         values = aguard_sheet.get_all_values()
@@ -69,69 +57,57 @@ def carregar_aguardando_google():
             return set()
         return set((row[0], row[1]) for row in values[1:])
     except Exception as e:
-        st.error(f"Erro ao carregar registros aguardando do Google Sheets: {e}")
+        st.error(f"Erro ao carregar registros aguardando: {e}")
         return set()
 
-# --- Funções de Modificação do Google Sheets (invalidam cache) ---
+# Functions that modify Google Sheets should not be cached, but their calls should invalidate relevant caches
 def marcar_tombado(cpf, contrato):
-    """Marca um contrato como tombado e o remove da lista de aguardando."""
+    # Adiciona ao tombados
     try:
         tomb_sheet = client.open("consulta_ativa").worksheet("tombados")
-    except gspread.exceptions.WorksheetNotFound:
+    except:
         tomb_sheet = client.open("consulta_ativa").add_worksheet(title="tombados", rows="1000", cols="3")
         tomb_sheet.append_row(["cpf", "contrato", "timestamp"])
-
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     tomb_sheet.append_row([cpf, contrato, timestamp])
 
+    # Remove da aba aguardando, se existir
     try:
         aguard_sheet = client.open("consulta_ativa").worksheet("aguardando")
         data = aguard_sheet.get_all_values()
-        if data: # Garante que há dados para processar
-            header = data[0]
-            rows = data[1:]
-            nova_lista = [row for row in rows if not (row[0] == cpf and row[1] == contrato)]
+        header = data[0]
+        rows = data[1:]
+        nova_lista = [row for row in rows if not (row[0] == cpf and row[1] == contrato)]
 
-            aguard_sheet.clear()
-            aguard_sheet.append_row(header)
-            if nova_lista: # Adiciona as linhas restantes apenas se houver
-                aguard_sheet.append_rows(nova_lista)
-    except gspread.exceptions.WorksheetNotFound:
-        st.warning("A aba 'aguardando' não existe, não foi possível remover o registro.")
+        aguard_sheet.clear()
+        aguard_sheet.append_row(header)
+        for row in nova_lista:
+            aguard_sheet.append_row(row)
     except Exception as e:
         st.warning(f"Erro ao remover da aba aguardando: {e}")
 
-    st.cache_data.clear() # Invalida todos os caches de dados para recarregar informações atualizadas
+    st.cache_data.clear()  # Invalida caches relacionados # Invalidate cache for tombados data
 
 def marcar_cpf_ativo(cpf):
-    """Marca um CPF como ativo na planilha principal."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    sheet = client.open("consulta_ativa").sheet1
+    sheet = client.open("consulta_ativa").sheet1 # Get the sheet reference again
     sheet.append_row([cpf, timestamp])
-    st.cache_data.clear()
+    st.cache_data.clear() # Invalidate cache for active CPFs
 
 def marcar_aguardando(cpf, contrato):
-    """Marca um contrato como aguardando conclusão."""
     try:
         aguard_sheet = client.open("consulta_ativa").worksheet("aguardando")
-    except gspread.exceptions.WorksheetNotFound:
+    except:
         aguard_sheet = client.open("consulta_ativa").add_worksheet(title="aguardando", rows="1000", cols="3")
         aguard_sheet.append_row(["cpf", "contrato", "timestamp"])
-
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     aguard_sheet.append_row([cpf, contrato, timestamp])
-    st.cache_data.clear()
+    st.cache_data.clear() # Invalidate cache for aguardando data
 
-# --- Inicialização do Session State ---
-# Garante que as variáveis de estado existam
-for key in ["autenticado", "novo_df", "tomb_df", "ultimo_cpf_consultado"]:
+# Initialize session state variables
+for key in ["autenticado", "arquivo_novo", "arquivo_tomb", "novo_df", "tomb_df", "ultimo_cpf_consultado"]:
     if key not in st.session_state:
-        if key == "autenticado":
-            st.session_state[key] = False
-        elif key in ["novo_df", "tomb_df"]:
-            st.session_state[key] = pd.DataFrame()
-        else:
-            st.session_state[key] = None
+        st.session_state[key] = None if key not in ["autenticado", "novo_df", "tomb_df"] else False if key == "autenticado" else pd.DataFrame()
 
 DATA_DIR = "data"
 NOVO_PATH = os.path.join(DATA_DIR, "novoemprestimo.xlsx")
@@ -140,126 +116,75 @@ TOMB_PATH = os.path.join(DATA_DIR, "tombamento.xlsx")
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
 
-# --- Autenticação ---
 def autenticar():
-    """Função para autenticar o usuário com uma senha."""
-    senha = st.text_input("Digite a senha para acessar o sistema:", type="password", key="senha_app")
+    senha = st.text_input("Digite a senha para acessar o sistema:", type="password")
     if senha == "tombamento":
         st.session_state.autenticado = True
         st.success("Acesso autorizado.")
-        st.rerun() # Recarrega a página para remover o campo de senha
     elif senha:
         st.error("Senha incorreta.")
 
 if not st.session_state.autenticado:
     autenticar()
-    st.stop() # Impede a execução do restante do script se não autenticado
+    st.stop()
 
-# --- Funções de Processamento de Dados Locais ---
 @st.cache_data
 def formatar_documentos(df_input, col, tamanho):
-    """Formata colunas de documentos (CPF/CNPJ) para o tamanho especificado."""
-    df = df_input.copy()
+    df = df_input.copy() # Work on a copy to avoid SettingWithCopyWarning
     df[col] = df[col].astype(str).str.replace(r'\D', '', regex=True).str.zfill(tamanho)
     return df
 
 @st.cache_data
 def load_and_process_data(novo_path, tomb_path):
-    """
-    Carrega e processa os DataFrames de empréstimos e tombamento.
-    Armazenado em cache para evitar recarregamento se os arquivos não mudarem.
-    """
-    try:
-        novo_df = pd.read_excel(novo_path)
-        tomb_df = pd.read_excel(tomb_path)
+    novo_df = pd.read_excel(novo_path)
+    tomb_df = pd.read_excel(tomb_path)
 
-        novo_df = formatar_documentos(novo_df, 'Número CPF/CNPJ', 11)
-        tomb_df = formatar_documentos(tomb_df, 'CPF Tomador', 11)
+    novo_df = formatar_documentos(novo_df, 'Número CPF/CNPJ', 11)
+    tomb_df = formatar_documentos(tomb_df, 'CPF Tomador', 11)
+    if 'Número Contrato' in tomb_df.columns:
+        tomb_df['Número Contrato'] = tomb_df['Número Contrato'].astype(str)
+    if 'Número Contrato Crédito' in novo_df.columns:
+        novo_df['Número Contrato Crédito'] = novo_df['Número Contrato Crédito'].astype(str)
 
-        if 'Número Contrato' in tomb_df.columns:
-            tomb_df['Número Contrato'] = tomb_df['Número Contrato'].astype(str)
-        if 'Número Contrato Crédito' in novo_df.columns:
-            novo_df['Número Contrato Crédito'] = novo_df['Número Contrato Crédito'].astype(str)
+    return novo_df, tomb_df
 
-        return novo_df, tomb_df
-    except FileNotFoundError:
-        st.error("Um ou ambos os arquivos de base não foram encontrados. Por favor, faça o upload.")
-        return pd.DataFrame(), pd.DataFrame()
-    except Exception as e:
-        st.error(f"Erro ao carregar ou processar os arquivos Excel: {e}")
-        return pd.DataFrame(), pd.DataFrame()
+def salvar_arquivos(upload_novo, upload_tomb):
+    with open(NOVO_PATH, "wb") as f:
+        f.write(upload_novo.read())
+    with open(TOMB_PATH, "wb") as f:
+        f.write(upload_tomb.read())
+    # Invalidate caches that depend on these files
+    st.cache_data.clear() # Clears all @st.cache_data caches
+    # Re-load processed data into session state
+    st.session_state.novo_df, st.session_state.tomb_df = load_and_process_data(NOVO_PATH, TOMB_PATH)
 
-# --- Lógica de Carregamento Inicial dos Arquivos ---
-# Verifica se os DataFrames já estão no session_state e não estão vazios
-if st.session_state.novo_df.empty or st.session_state.tomb_df.empty:
-    # Se não estiverem, tenta carregar dos arquivos locais
-    if os.path.exists(NOVO_PATH) and os.path.exists(TOMB_PATH):
-        st.session_state.novo_df, st.session_state.tomb_df = load_and_process_data(NOVO_PATH, TOMB_PATH)
-        if st.session_state.novo_df.empty or st.session_state.tomb_df.empty:
-            st.warning("Os arquivos locais foram encontrados, mas não puderam ser processados. Por favor, faça o upload novamente.")
-            # Força o upload se o processamento falhou
-            arquivo_novo = st.file_uploader("Base NovoEmprestimo.xlsx", type="xlsx", key="upload_novo_initial")
-            arquivo_tomb = st.file_uploader("Base Tombamento.xlsx", type="xlsx", key="upload_tomb_initial")
-            if arquivo_novo and arquivo_tomb:
-                # Função interna para salvar e recarregar, evitando um loop de reruns
-                def _salvar_e_recarregar():
-                    try:
-                        with open(NOVO_PATH, "wb") as f:
-                            f.write(arquivo_novo.read())
-                        with open(TOMB_PATH, "wb") as f:
-                            f.write(arquivo_tomb.read())
-                        st.cache_data.clear() # Limpa o cache para forçar o recarregamento dos novos dados
-                        st.session_state.novo_df, st.session_state.tomb_df = load_and_process_data(NOVO_PATH, TOMB_PATH)
-                        st.success("Bases carregadas/atualizadas com sucesso.")
-                        st.rerun() # Recarrega a página para refletir os novos dados
-                    except Exception as e:
-                        st.error(f"Erro ao salvar os arquivos: {e}")
-                if st.button("Carregar Bases"): # Botão para acionar o salvamento
-                     _salvar_e_recarregar()
-            st.stop() # Para a execução até que os arquivos sejam carregados
+
+# --- Data Loading and Pre-processing (Centralized and Cached) ---
+if not os.path.exists(NOVO_PATH) or not os.path.exists(TOMB_PATH):
+    st.info("Faça o upload das bases para iniciar o sistema.")
+    arquivo_novo = st.file_uploader("Base NovoEmprestimo.xlsx", type="xlsx", key="upload_novo")
+    arquivo_tomb = st.file_uploader("Base Tombamento.xlsx", type="xlsx", key="upload_tomb")
+    if arquivo_novo and arquivo_tomb:
+        salvar_arquivos(arquivo_novo, arquivo_tomb)
+        st.success("Bases carregadas com sucesso.")
+        st.rerun()
     else:
-        st.info("Faça o upload das bases para iniciar o sistema.")
-        arquivo_novo = st.file_uploader("Base NovoEmprestimo.xlsx", type="xlsx", key="upload_novo_initial")
-        arquivo_tomb = st.file_uploader("Base Tombamento.xlsx", type="xlsx", key="upload_tomb_initial")
-        if arquivo_novo and arquivo_tomb:
-            # Função interna para salvar e recarregar, evitando um loop de reruns
-            def _salvar_e_recarregar():
-                try:
-                    with open(NOVO_PATH, "wb") as f:
-                        f.write(arquivo_novo.read())
-                    with open(TOMB_PATH, "wb") as f:
-                        f.write(arquivo_tomb.read())
-                    st.cache_data.clear() # Limpa o cache para forçar o recarregamento dos novos dados
-                    st.session_state.novo_df, st.session_state.tomb_df = load_and_process_data(NOVO_PATH, TOMB_PATH)
-                    st.success("Bases carregadas/atualizadas com sucesso.")
-                    st.rerun() # Recarrega a página para refletir os novos dados
-                except Exception as e:
-                    st.error(f"Erro ao salvar os arquivos: {e}")
-            if st.button("Carregar Bases"): # Botão para acionar o salvamento
-                _salvar_e_recarregar()
-        st.stop() # Para a execução até que os arquivos sejam carregados
+        st.stop()
+else:
+    # Load data once and store in session state
+    if st.session_state.novo_df.empty or st.session_state.tomb_df.empty:
+        st.session_state.novo_df, st.session_state.tomb_df = load_and_process_data(NOVO_PATH, TOMB_PATH)
 
-# Se chegamos aqui, os DataFrames estão carregados no session_state
+# Retrieve data for calculations and display
 df = st.session_state.novo_df
 tomb = st.session_state.tomb_df
-
-# Verifica se os DataFrames estão realmente carregados antes de prosseguir
-if df.empty or tomb.empty:
-    st.error("Não foi possível carregar os dados. Verifique os arquivos e tente novamente.")
-    st.stop()
-
-# --- Carregamento de Dados do Google Sheets (sempre atualizados) ---
 cpfs_ativos = carregar_cpfs_ativos()
 tombados = carregar_tombados_google()
 aguardando = carregar_aguardando_google()
 
-# --- Filtragem Inicial do DataFrame (com cache) ---
+# Filter initial DataFrame once for common conditions
 @st.cache_data
 def get_filtered_df(df_input):
-    """
-    Aplica os filtros comuns ao DataFrame principal.
-    Armazenado em cache para evitar reprocessamento.
-    """
     return df_input[
         (df_input['Submodalidade Bacen'] == 'CRÉDITO PESSOAL - COM CONSIGNAÇÃO EM FOLHA DE PAGAM.') &
         (df_input['Critério Débito'] == 'FOLHA DE PAGAMENTO') &
@@ -268,13 +193,9 @@ def get_filtered_df(df_input):
 
 filtered_common_df = get_filtered_df(df)
 
-# --- Cálculo Otimizado de Contagens para o Menu (com cache) ---
+# --- Optimized Calculation of Counts for Menu Items ---
 @st.cache_data
 def calculate_counts(filtered_df, tomb_df, active_cpfs, tombados_set, aguardando_set):
-    """
-    Calcula as contagens para os itens do menu.
-    Armazenado em cache para otimização.
-    """
     # Inconsistencies count
     merged_df = filtered_df.merge(
         tomb_df[['CPF Tomador', 'Número Contrato']],
@@ -287,97 +208,45 @@ def calculate_counts(filtered_df, tomb_df, active_cpfs, tombados_set, aguardando
     num_inconsistencias = len(inconsistencias_df)
 
     # Registros Consulta Ativa count
+    # Convert sets to DataFrames for merging if they are large, otherwise list comprehension is fine
+    # For optimization, let's create a temporary DataFrame for faster lookup
     active_contracts_df = filtered_df[
         filtered_df['Número CPF/CNPJ'].isin(active_cpfs)
     ].copy()
-
-    active_contracts_df['temp_key'] = active_contracts_df.apply(
-        lambda r: (r['Número CPF/CNPJ'], r['Número Contrato Crédito']), axis=1
-    )
-
+    
+    # Exclude already tombados or aguardando
+    active_contracts_df['temp_key'] = active_contracts_df.apply(lambda r: (r['Número CPF/CNPJ'], r['Número Contrato Crédito']), axis=1)
+    
     registros_consulta_ativa_df = active_contracts_df[
         ~active_contracts_df['temp_key'].isin(tombados_set) &
         ~active_contracts_df['temp_key'].isin(aguardando_set)
     ].drop(columns=['temp_key'])
     num_consulta_ativa = len(registros_consulta_ativa_df)
 
+
     # Aguardando Conclusão count
-    # Cria um DataFrame temporário a partir do set para merge
-    aguardando_df_temp = pd.DataFrame(list(aguardando_set), columns=['Número CPF/CNPJ', 'Número Contrato Crédito'])
-    merged_aguardando = aguardando_df_temp.merge(
-        df, # Usa o df completo para obter todas as colunas
+    aguardando_df = pd.DataFrame(list(aguardando_set), columns=['Número CPF/CNPJ', 'Número Contrato Crédito'])
+    merged_aguardando = aguardando_df.merge(
+        df,
         on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
         how='inner'
     )
     num_aguardando = len(merged_aguardando)
 
     # Tombado count
-    # Cria um DataFrame temporário a partir do set para merge
     tombados_df_temp = pd.DataFrame(list(tombados_set), columns=['Número CPF/CNPJ', 'Número Contrato Crédito'])
     merged_tombados = tombados_df_temp.merge(
-        df, # Usa o df completo para obter todas as colunas
+        df,
         on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
         how='inner'
     )
     num_tombado = len(merged_tombados)
 
-    return num_inconsistencias, num_consulta_ativa, num_aguardando, num_tombado, \
-           inconsistencias_df, registros_consulta_ativa_df, merged_aguardando, merged_tombados
+    return num_inconsistencias, num_consulta_ativa, num_aguardando, num_tombado, inconsistencias_df, registros_consulta_ativa_df, merged_aguardando, merged_tombados
 
-num_inconsistencias, num_consulta_ativa, num_aguardando, num_tombado, \
-inconsistencias_data, registros_consulta_ativa_data, aguardando_conclusao_data, tombado_data = \
+num_inconsistencias, num_consulta_ativa, num_aguardando, num_tombado, inconsistencias_data, registros_consulta_ativa_data, aguardando_conclusao_data, tombado_data = \
     calculate_counts(filtered_common_df, tomb, cpfs_ativos, tombados, aguardando)
 
-# --- Funções Auxiliares (movidas para aqui) ---
-def validar_cpf(cpf):
-    """Valida um CPF."""
-    cpf = ''.join(filter(str.isdigit, cpf))
-    if len(cpf) != 11 or cpf == cpf[0] * 11:
-        return False
-    for i in range(9, 11):
-        soma = sum(int(cpf[j]) * ((i+1) - j) for j in range(i))
-        digito = ((soma * 10) % 11) % 10
-        if digito != int(cpf[i]):
-            return False
-    return True
-
-def tentar_corrigir_cpf(cpf_raw):
-    """Tenta corrigir um CPF com erros comuns de digitação."""
-    substituicoes = {'1': '4', '4': '1', '0': '8', '8': '0', '5': '6', '6': '5'} # Adicione mais se necessário
-    for i, c in enumerate(cpf_raw):
-        if c in substituicoes:
-            corrigido = list(cpf_raw)
-            corrigido[i] = substituicoes[c]
-            corrigido_str = "".join(corrigido)
-            if validar_cpf(corrigido_str):
-                return corrigido_str
-    return None
-
-# --- Configuração e Função do EasyOCR ---
-os.environ["EASYOCR_MODEL_STORAGE_DIR"] = "./.easyocr"
-try:
-    reader = easyocr.Reader(['pt'], gpu=False)
-except Exception as e:
-    st.error(f"Erro ao inicializar EasyOCR. Verifique a instalação e dependências: {e}")
-    reader = None # Define reader como None para evitar erros posteriores
-
-def extrair_cpfs_de_imagem(imagem):
-    """Extrai CPFs de uma imagem usando EasyOCR."""
-    if reader is None:
-        st.error("EasyOCR não foi inicializado. Não é possível extrair CPFs de imagens.")
-        return []
-    try:
-        imagem_np = np.array(imagem)
-        result = reader.readtext(imagem_np)
-        texto = " ".join([res[1] for res in result])
-        # Regex para CPFs no formato XXX.XXX.XXX-XX ou apenas 11 dígitos
-        cpfs_encontrados = re.findall(r'\d{3}\.\d{3}\.\d{3}-\d{2}|\d{11}', texto)
-        return cpfs_encontrados
-    except Exception as e:
-        st.error(f"Erro ao processar imagem com EasyOCR: {e}")
-        return []
-
-# --- Menu Lateral ---
 st.sidebar.header("Menu")
 menu_options = [
     "Consulta Individual",
@@ -391,50 +260,40 @@ menu_options = [
 ]
 menu = st.sidebar.radio("Navegação", menu_options)
 
-# --- Seções do Aplicativo ---
-# A ordem dos 'if/elif' importa para a lógica de 'st.stop()'
 if menu == "Atualizar Bases":
-    st.title("🔄 Atualizar Bases de Dados")
-    st.info("Faça o upload de novas versões dos arquivos para atualizar o sistema.")
-    arquivo_novo_update = st.file_uploader("Nova Base NovoEmprestimo.xlsx", type="xlsx", key="upload_novo_update")
-    arquivo_tomb_update = st.file_uploader("Nova Base Tombamento.xlsx", type="xlsx", key="upload_tomb_update")
-    if st.button("Atualizar Bases"):
-        if arquivo_novo_update and arquivo_tomb_update:
-            # Função interna para salvar e recarregar, evitando um loop de reruns
-            def _salvar_e_recarregar_update():
-                try:
-                    with open(NOVO_PATH, "wb") as f:
-                        f.write(arquivo_novo_update.read())
-                    with open(TOMB_PATH, "wb") as f:
-                        f.write(arquivo_tomb_update.read())
-                    st.cache_data.clear() # Limpa o cache para forçar o recarregamento dos novos dados
-                    st.session_state.novo_df, st.session_state.tomb_df = load_and_process_data(NOVO_PATH, TOMB_PATH)
-                    st.success("Bases atualizadas com sucesso!")
-                    st.rerun() # Recarrega a página para refletir os novos dados
-                except Exception as e:
-                    st.error(f"Erro ao salvar os arquivos: {e}")
-            _salvar_e_recarregar_update()
+    st.session_state.arquivo_novo = st.sidebar.file_uploader("Nova Base NovoEmprestimo.xlsx", type="xlsx")
+    st.session_state.arquivo_tomb = st.sidebar.file_uploader("Nova Base Tombamento.xlsx", type="xlsx")
+    if st.sidebar.button("Atualizar"):
+        if st.session_state.arquivo_novo and st.session_state.arquivo_tomb:
+            salvar_arquivos(st.session_state.arquivo_novo, st.session_state.arquivo_tomb)
+            st.success("Bases atualizadas.")
+            st.rerun() # Rerun to update counts and dataframes
         else:
-            st.warning("Por favor, envie ambos os arquivos para atualizar.")
-    st.stop() # Impede a execução de outras seções após a atualização
+            st.warning("Envie os dois arquivos para atualizar.")
+    st.stop()
 
-elif menu == "Consulta Individual":
+
+if "Consulta Individual" in menu:
     st.title("🔍 Consulta de Empréstimos por CPF")
     cpf_input = st.text_input("Digite o CPF (apenas números):", key="cpf_consulta").strip()
 
-    # Botão de consulta para acionar a lógica
-    if st.button("Consultar CPF"):
+    if "ultimo_cpf_consultado" not in st.session_state:
+        st.session_state.ultimo_cpf_consultado = None
+
+    if st.button("Consultar"):
         st.session_state.ultimo_cpf_consultado = cpf_input
 
     if st.session_state.ultimo_cpf_consultado:
         cpf_validado = st.session_state.ultimo_cpf_consultado
 
         if cpf_validado and len(cpf_validado) == 11 and cpf_validado.isdigit():
+            # Use the already filtered common_df
             filtrado = filtered_common_df[filtered_common_df['Número CPF/CNPJ'] == cpf_validado].copy()
 
             if filtrado.empty:
-                st.warning("Nenhum contrato encontrado com os filtros aplicados para este CPF.")
+                st.warning("Nenhum contrato encontrado com os filtros aplicados.")
             else:
+                # Optimized merge for consignante info
                 resultados_df = filtrado.merge(
                     tomb[['CPF Tomador', 'Número Contrato', 'CNPJ Empresa Consignante', 'Empresa Consignante']],
                     left_on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
@@ -449,68 +308,57 @@ elif menu == "Consulta Individual":
                     "Quantidade Parcelas Abertas", "% Taxa Operação", "Código Linha Crédito",
                     "Nome Comercial", "Consignante", "Empresa Consignante"
                 ]
-                st.dataframe(resultados_df[display_cols], use_container_width=True)
+                st.dataframe(resultados_df[display_cols])
 
-                # Botão "Marcar como Consulta Ativa" condicional
                 if cpf_validado in cpfs_ativos:
                     st.info("✅ CPF já marcado como Consulta Ativa.")
                 else:
-                    if st.button("Marcar como Consulta Ativa", key="btn_marcar_ca"):
+                    if st.button("Marcar como Consulta Ativa"):
                         marcar_cpf_ativo(cpf_validado)
                         st.success("✅ CPF marcado com sucesso.")
                         st.rerun()
         else:
             st.warning("CPF inválido. Digite exatamente 11 números.")
 
-elif menu == "Registros Consulta Ativa":
+
+if "Registros Consulta Ativa" in menu:
     st.title(f"📋 Registros de Consulta Ativa ({num_consulta_ativa})")
 
     if not registros_consulta_ativa_data.empty:
-        st.dataframe(registros_consulta_ativa_data, use_container_width=True)
+        cpf_input = st.text_input("Digite o CPF (apenas números):", key="cpf_ca_input").strip()
 
-        st.subheader("Marcar Contratos como 'Aguardando Conclusão'")
-        cpf_input_ca = st.text_input("Digite o CPF para filtrar contratos:", key="cpf_ca_input").strip()
-
-        contratos_filtrados_ca = []
-        if cpf_input_ca and len(cpf_input_ca) == 11 and cpf_input_ca.isdigit():
-            contratos_filtrados_ca = registros_consulta_ativa_data[
-                registros_consulta_ativa_data['Número CPF/CNPJ'] == cpf_input_ca
+        if cpf_input and len(cpf_input) == 11:
+            contratos_filtrados = registros_consulta_ativa_data[
+                registros_consulta_ativa_data['Número CPF/CNPJ'] == cpf_input
             ]['Número Contrato Crédito'].astype(str).tolist()
-            if not contratos_filtrados_ca:
-                st.info(f"Nenhum contrato ativo encontrado para o CPF {cpf_input_ca}.")
-        elif cpf_input_ca:
-            st.warning("CPF inválido. Digite exatamente 11 números.")
 
-        if contratos_filtrados_ca:
-            contratos_escolhidos_ca = st.multiselect(
-                "Selecione os contratos para marcar como 'Aguardando Conclusão':",
-                contratos_filtrados_ca,
-                key="multiselect_ca"
-            )
+            contratos_escolhidos = st.multiselect("Selecione os contratos para marcar:", contratos_filtrados)
 
-            # Botão "Marcar como Lançado Sisbr" condicional
-            if contratos_escolhidos_ca:
-                if st.button("Marcar como Lançado Sisbr", key="btn_marcar_sisbr"):
-                    for contrato in contratos_escolhidos_ca:
-                        marcar_aguardando(cpf_input_ca, contrato)
-                    st.success(f"{len(contratos_escolhidos_ca)} contrato(s) marcado(s) como 'Aguardando Conclusão'.")
-                    st.rerun()
-            else:
-                st.info("Selecione um ou mais contratos para habilitar o botão de marcação.")
+            if st.button("Marcar como Lançado Sisbr"):
+                for contrato in contratos_escolhidos:
+                    marcar_aguardando(cpf_input, contrato)
+                st.success(f"{len(contratos_escolhidos)} contrato(s) marcado(s) como 'Aguardando Conclusão'.")
+                st.rerun()
+
+        st.dataframe(registros_consulta_ativa_data, use_container_width=True)
     else:
         st.info("Nenhum registro disponível para Consulta Ativa.")
 
-elif menu == "Resumo":
+
+if menu == "Resumo":
     st.title("📊 Resumo Consolidado por Consignante (Base Completa)")
 
     if not filtered_common_df.empty:
+        # Prepare data for merge and status flags
         temp_df = filtered_common_df[['Número CPF/CNPJ', 'Número Contrato Crédito']].copy()
         temp_df['Contrato_Tuple'] = list(zip(temp_df['Número CPF/CNPJ'], temp_df['Número Contrato Crédito']))
 
+        # Add status columns directly
         temp_df['Consulta Ativa'] = temp_df['Número CPF/CNPJ'].isin(cpfs_ativos)
         temp_df['Tombado'] = temp_df['Contrato_Tuple'].isin(tombados)
         temp_df['Aguardando'] = temp_df['Contrato_Tuple'].isin(aguardando)
 
+        # Merge with tomb for consignante info
         df_registros = temp_df.merge(
             tomb[['CPF Tomador', 'Número Contrato', 'CNPJ Empresa Consignante', 'Empresa Consignante']],
             left_on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
@@ -521,6 +369,7 @@ elif menu == "Resumo":
         df_registros['Empresa Consignante'] = df_registros['Empresa Consignante'].fillna("CONSULTE SISBR")
         df_registros = df_registros.rename(columns={'Número CPF/CNPJ': 'CPF', 'Número Contrato Crédito': 'Contrato'})
 
+
         resumo = df_registros.groupby(["CNPJ Empresa Consignante", "Empresa Consignante"]).agg(
             Total_Cooperados=("CPF", "nunique"),
             Total_Contratos=("Contrato", "count"),
@@ -529,7 +378,7 @@ elif menu == "Resumo":
             Total_Aguardando_Conclusao=("Aguardando", "sum")
         ).reset_index()
 
-        st.dataframe(resumo, use_container_width=True)
+        st.dataframe(resumo)
 
         with st.expander("📥 Exportar relação analítica"):
             with io.BytesIO() as buffer:
@@ -545,16 +394,18 @@ elif menu == "Resumo":
     else:
         st.info("Nenhum dado encontrado na base para resumo.")
 
-elif menu == "Inconsistências":
+
+if "Inconsistências" in menu:
     st.title(f"🚨 Contratos sem Correspondência no Tombamento ({num_inconsistencias})")
 
     if inconsistencias_data.empty:
         st.success("Nenhuma inconsistência encontrada.")
     else:
         st.warning(f"{len(inconsistencias_data)} contratos sem correspondência no tombamento encontrados.")
+        # Only show relevant columns for inconsistencies
         st.dataframe(inconsistencias_data[
             ['Número CPF/CNPJ', 'Número Contrato Crédito', 'Código Linha Crédito', 'Nome Cliente']
-        ], use_container_width=True)
+        ])
 
         with st.expander("📥 Exportar inconsistências"):
             with io.BytesIO() as buffer:
@@ -570,48 +421,36 @@ elif menu == "Inconsistências":
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-elif menu == "Aguardando Conclusão":
+
+if "Aguardando Conclusão" in menu:
     st.title(f"⏳ Registros Aguardando Conclusão ({num_aguardando})")
 
     if not aguardando_conclusao_data.empty:
-        st.dataframe(aguardando_conclusao_data, use_container_width=True)
+        cpf_input = st.text_input("Digite o CPF (apenas números):", key="cpf_ag_input").strip()
 
-        st.subheader("Marcar Contratos como 'Tombado'")
-        cpf_input_ag = st.text_input("Digite o CPF para filtrar contratos:", key="cpf_ag_input").strip()
-
-        contratos_filtrados_ag = []
-        if cpf_input_ag and len(cpf_input_ag) == 11 and cpf_input_ag.isdigit():
-            contratos_filtrados_ag = aguardando_conclusao_data[
-                aguardando_conclusao_data['Número CPF/CNPJ'] == cpf_input_ag
+        if cpf_input and len(cpf_input) == 11:
+            contratos_filtrados = aguardando_conclusao_data[
+                aguardando_conclusao_data['Número CPF/CNPJ'] == cpf_input
             ]['Número Contrato Crédito'].astype(str).tolist()
-            if not contratos_filtrados_ag:
-                st.info(f"Nenhum contrato aguardando conclusão encontrado para o CPF {cpf_input_ag}.")
-        elif cpf_input_ag:
-            st.warning("CPF inválido. Digite exatamente 11 números.")
 
-        if contratos_filtrados_ag:
-            contratos_escolhidos_ag = st.multiselect(
-                "Selecione os contratos para marcar como 'Tombado':",
-                contratos_filtrados_ag,
-                key="multiselect_ag"
-            )
+            contratos_escolhidos = st.multiselect("Selecione os contratos para tombar:", contratos_filtrados)
 
-            # Botão "Marcar como Tombado" condicional
-            if contratos_escolhidos_ag:
-                if st.button("Marcar como Tombado", key="btn_marcar_tombado"):
-                    for contrato in contratos_escolhidos_ag:
-                        marcar_tombado(cpf_input_ag, contrato)
-                    st.success(f"{len(contratos_escolhidos_ag)} contrato(s) tombado(s) com sucesso.")
-                    st.rerun()
-            else:
-                st.info("Selecione um ou mais contratos para habilitar o botão de marcação.")
+            if st.button("Marcar como Tombado"):
+                for contrato in contratos_escolhidos:
+                    marcar_tombado(cpf_input, contrato)
+                st.success(f"{len(contratos_escolhidos)} contrato(s) tombado(s) com sucesso.")
+                st.rerun()
+
+        st.dataframe(aguardando_conclusao_data, use_container_width=True)
     else:
-        st.info("Nenhum registro encontrado na lista de 'Aguardando Conclusão'.")
+        st.info("Nenhum registro encontrado.")
 
-elif menu == "Tombado":
+
+if "Tombado" in menu:
     st.title(f"📁 Registros Tombados ({num_tombado})")
 
     if not tombado_data.empty:
+        # Merge with tomb for consignante info for display
         df_resultado = tombado_data.merge(
             tomb[['CPF Tomador', 'Número Contrato', 'CNPJ Empresa Consignante', 'Empresa Consignante']],
             left_on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
@@ -627,14 +466,46 @@ elif menu == "Tombado":
             "Nome Comercial", "Consignante", "Empresa Consignante"
         ]
         st.dataframe(df_resultado[display_cols_tomb], use_container_width=True)
+
     else:
         st.info("Nenhum contrato marcado como tombado encontrado.")
 
+# Funções de validação e correção de CPF (movidas para o escopo global)
+def validar_cpf(cpf):
+    cpf = ''.join(filter(str.isdigit, cpf))
+    if len(cpf) != 11 or cpf == cpf[0] * 11:
+        return False
+    for i in range(9, 11):
+        soma = sum(int(cpf[j]) * ((i+1) - j) for j in range(i))
+        digito = ((soma * 10) % 11) % 10
+        if digito != int(cpf[i]):
+            return False
+    return True
 
-elif menu == "Imagens":
+def tentar_corrigir_cpf(cpf_raw):
+    # Tenta substituir dígitos comuns de erro e revalidar
+    substituicoes = {'1': '4', '4': '1'}
+    for i, c in enumerate(cpf_raw):
+        if c in substituicoes:
+            corrigido = cpf_raw[:i] + substituicoes[c] + cpf_raw[i+1:]
+            if validar_cpf(corrigido):
+                return corrigido
+    return None
+
+# Inicializar o reader do EasyOCR uma vez (movido para o escopo global)
+os.environ["EASYOCR_MODEL_STORAGE_DIR"] = "./.easyocr"
+reader = easyocr.Reader(['pt'], gpu=False)
+
+def extrair_cpfs_de_imagem(imagem):
+    imagem_np = np.array(imagem)
+    result = reader.readtext(imagem_np)
+    texto = " ".join([res[1] for res in result])
+    return re.findall(r'\d{3}\.\d{3}\.\d{3}-\d{2}', texto)
+
+
+if "Imagens" in menu:
     st.title("📷 Extração de CPFs via Imagem")
-    st.info("Envie imagens contendo CPFs para que o sistema tente extraí-los e marcá-los como 'Consulta Ativa'.")
-    imagens = st.file_uploader("Envie uma ou mais imagens (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+    imagens = st.file_uploader("Envie uma ou mais imagens contendo CPFs", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
     if imagens:
         resultados = []
@@ -643,52 +514,47 @@ elif menu == "Imagens":
                 imagem = Image.open(img_file)
                 cpfs_extraidos = extrair_cpfs_de_imagem(imagem)
 
-                if not cpfs_extraidos:
-                    resultados.append((img_file.name, "Nenhum CPF detectado na imagem."))
-                    continue
-
                 for cpf_raw in cpfs_extraidos:
-                    cpf_limpo = re.sub(r'\D', '', cpf_raw) # Remove pontos e traços
-
-                    status_msg = ""
-                    if len(cpf_limpo) == 11 and validar_cpf(cpf_limpo):
-                        if cpf_limpo in df['Número CPF/CNPJ'].values:
-                            if cpf_limpo not in cpfs_ativos:
-                                marcar_cpf_ativo(cpf_limpo)
-                                status_msg = "✅ Marcado com sucesso"
-                            else:
-                                status_msg = "ℹ️ Já estava marcado"
-                        else:
-                            status_msg = "❌ CPF não encontrado na base de empréstimos"
-                    else:
-                        # Tenta corrigir se o CPF não é válido ou tem tamanho errado
-                        cpf_corrigido = tentar_corrigir_cpf(cpf_limpo)
+                    cpf = re.sub(r'\D', '', cpf_raw)
+                    if len(cpf) != 11 or not validar_cpf(cpf):
+                        cpf_corrigido = tentar_corrigir_cpf(cpf)
                         if cpf_corrigido and cpf_corrigido in df['Número CPF/CNPJ'].values:
                             if cpf_corrigido not in cpfs_ativos:
                                 marcar_cpf_ativo(cpf_corrigido)
-                                status_msg = f"✅ Corrigido ({cpf_limpo} ➜ {cpf_corrigido}) e marcado"
+                                resultados.append((cpf_raw + f" ➜ {cpf_corrigido}", "✅ Corrigido e marcado"))
                             else:
-                                status_msg = f"ℹ️ Corrigido ({cpf_limpo} ➜ {cpf_corrigido}), já estava marcado"
+                                resultados.append((cpf_raw + f" ➜ {cpf_corrigido}", "ℹ️ Corrigido, já estava marcado"))
                         else:
-                            status_msg = f"❌ CPF inválido ou não encontrado ({cpf_limpo})"
+                            resultados.append((cpf_raw, "❌ CPF inválido ou não encontrado"))
+                        continue
 
-                    resultados.append((cpf_raw, status_msg))
-
+                    if cpf in df['Número CPF/CNPJ'].values:
+                        if cpf not in cpfs_ativos:
+                            marcar_cpf_ativo(cpf)
+                            resultados.append((cpf_raw, "✅ Marcado com sucesso"))
+                        else:
+                            resultados.append((cpf_raw, "ℹ️ Já estava marcado"))
+                    else:
+                        resultados.append((cpf_raw, "❌ CPF não encontrado na base"))
             except Exception as e:
                 resultados.append((img_file.name, f"Erro ao processar imagem: {e}"))
 
         if resultados:
             st.subheader("📄 Log de Processamento")
-            df_resultados = pd.DataFrame(resultados, columns=["CPF Detectado", "Status"])
+            df_resultados = pd.DataFrame(resultados, columns=["CPF", "Status"])
             st.dataframe(df_resultados, use_container_width=True)
 
+            # Correção para o ValueError: Obtenha o valor binário do buffer
+            excel_data = None
             with io.BytesIO() as buffer:
-                with pd.ExcelWriter(buffer, engine='openynpxl') as writer: # Typo here, corrected to 'openpyxl'
-                    df_resultados.to_excel(writer, index=False, sheet_name="Log CPFs Imagem")
-                buffer.seek(0)
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    df_resultados.to_excel(writer, index=False, sheet_name="Log")
+                excel_data = buffer.getvalue() # Obtenha o conteúdo binário
+
+            if excel_data: # Verifique se há dados antes de tentar baixar
                 st.download_button(
                     label="📥 Baixar log em Excel",
-                    data=buffer,
+                    data=excel_data, # Passe os bytes diretamente
                     file_name="log_cpfs_imagem.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
