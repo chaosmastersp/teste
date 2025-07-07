@@ -273,7 +273,6 @@ if menu == "Atualizar Bases":
     st.stop()
 
 
-
 if "Consulta Individual" in menu:
     st.title("🔍 Consulta de Empréstimos por CPF")
     cpf_input = st.text_input("Digite o CPF (apenas números):", key="cpf_consulta").strip()
@@ -288,11 +287,13 @@ if "Consulta Individual" in menu:
         cpf_validado = st.session_state.ultimo_cpf_consultado
 
         if cpf_validado and len(cpf_validado) == 11 and cpf_validado.isdigit():
+            # Use the already filtered common_df
             filtrado = filtered_common_df[filtered_common_df['Número CPF/CNPJ'] == cpf_validado].copy()
 
             if filtrado.empty:
                 st.warning("Nenhum contrato encontrado com os filtros aplicados.")
             else:
+                # Optimized merge for consignante info
                 resultados_df = filtrado.merge(
                     tomb[['CPF Tomador', 'Número Contrato', 'CNPJ Empresa Consignante', 'Empresa Consignante']],
                     left_on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
@@ -311,14 +312,11 @@ if "Consulta Individual" in menu:
 
                 if cpf_validado in cpfs_ativos:
                     st.info("✅ CPF já marcado como Consulta Ativa.")
-                elif not filtrado.empty:
+                else:
                     if st.button("Marcar como Consulta Ativa"):
                         marcar_cpf_ativo(cpf_validado)
                         st.success("✅ CPF marcado com sucesso.")
                         st.rerun()
-        else:
-            st.warning("CPF inválido. Digite exatamente 11 números.")
-erun()
         else:
             st.warning("CPF inválido. Digite exatamente 11 números.")
 
