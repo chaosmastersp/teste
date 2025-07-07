@@ -605,7 +605,7 @@ def extrair_cpfs_de_imagem(imagem):
         st.error(f"Erro ao processar imagem com EasyOCR: {e}")
         return []
 
-elif menu == "Imagens": # Este é o bloco que estava causando o erro
+elif menu == "Imagens":
     st.title("📷 Extração de CPFs via Imagem")
     st.info("Envie imagens contendo CPFs para que o sistema tente extraí-los e marcá-los como 'Consulta Ativa'.")
     imagens = st.file_uploader("Envie uma ou mais imagens (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
@@ -659,12 +659,10 @@ elif menu == "Imagens": # Este é o bloco que estava causando o erro
             with io.BytesIO() as buffer:
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     df_resultados.to_excel(writer, index=False, sheet_name="Log CPFs Imagem")
-                excel_data = buffer.getvalue()
-
-            if excel_data:
+                buffer.seek(0)
                 st.download_button(
                     label="📥 Baixar log em Excel",
-                    data=excel_data,
+                    data=buffer,
                     file_name="log_cpfs_imagem.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
