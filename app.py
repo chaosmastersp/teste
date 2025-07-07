@@ -328,7 +328,8 @@ menu_options = [
 ]
 menu = st.sidebar.radio("Navegação", menu_options)
 
-# --- Seção de Atualização de Bases ---
+# --- Seções do Aplicativo ---
+# A ordem dos 'if/elif' importa para a lógica de 'st.stop()'
 if menu == "Atualizar Bases":
     st.title("🔄 Atualizar Bases de Dados")
     st.info("Faça o upload de novas versões dos arquivos para atualizar o sistema.")
@@ -343,8 +344,7 @@ if menu == "Atualizar Bases":
             st.warning("Por favor, envie ambos os arquivos para atualizar.")
     st.stop() # Impede a execução de outras seções após a atualização
 
-# --- Seções do Aplicativo ---
-if menu == "Consulta Individual":
+elif menu == "Consulta Individual":
     st.title("🔍 Consulta de Empréstimos por CPF")
     cpf_input = st.text_input("Digite o CPF (apenas números):", key="cpf_consulta").strip()
 
@@ -605,7 +605,7 @@ def extrair_cpfs_de_imagem(imagem):
         st.error(f"Erro ao processar imagem com EasyOCR: {e}")
         return []
 
-elif menu == "Imagens":
+elif menu == "Imagens": # Este é o bloco que estava causando o erro
     st.title("📷 Extração de CPFs via Imagem")
     st.info("Envie imagens contendo CPFs para que o sistema tente extraí-los e marcá-los como 'Consulta Ativa'.")
     imagens = st.file_uploader("Envie uma ou mais imagens (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
