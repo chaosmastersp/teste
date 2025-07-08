@@ -266,6 +266,7 @@ menu_options = [
     "Imagens",
     "Marcação Consulta em Lote",  # Novo menu 1
     "Marcação Tombado em Lote",  # Novo menu 2
+    "Marcação Sisbr em Lote",  # Novo menu 3
     "Atualizar Bases"
 ]
 menu = st.sidebar.radio("Navegação", menu_options)
@@ -687,6 +688,67 @@ if menu == "Marcação Tombado em Lote":
                     label="📅 Baixar log em Excel",
                     data=buffer,
                     file_name="log_tombado_lote.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+        except Exception as e:
+            st.error(f"Erro ao processar o arquivo: {e}")
+
+# Menu: Marcação Sisbr em Lote
+if menu == "Marcação Sisbr em Lote":
+    st.title("📂 Marcação em Lote - Lançado Sisbr")
+
+    arquivo_sisbr_lote = st.file_uploader("Envie um arquivo .xlsx com CPF e Contrato para marcar como Lançado Sisbr", type="xlsx")
+
+    if arquivo_sisbr_lote:
+        try:
+            df_lote = pd.read_excel(arquivo_sisbr_lote)
+            if df_lote.empty:
+                st.warning("O arquivo enviado está vazio.")
+                st.stop()
+
+            col_cpf, col_contrato = None, None
+            for col in df_lote.columns:
+                col_lower = col.lower()
+                if "cpf" in col_lower:
+                    col_cpf = col
+                elif "contrato" in col_lower:
+                    col_contrato = col
+            if not col_cpf or not col_contrato:
+                st.error("As colunas 'CPF' e 'Contrato' são obrigatórias.")
+                st.stop()
+
+            df_lote[col_cpf] = df_lote[col_cpf].astype(str).str.replace(r'\D', '', regex=True).str.zfill(11)
+            df_lote[col_contrato] = df_lote[col_contrato].astype(str).str.strip()
+
+            log = []
+            for _, row in df_lote.iterrows():
+                cpf = row[col_cpf]
+                contrato = row[col_contrato]
+                chave = (cpf, contrato)
+
+                if not validar_cpf(cpf):
+                    log.append((cpf, contrato, "❌ CPF inválido"))
+                    continue
+                if chave in aguardando:
+                    log.append((cpf, contrato, "ℹ️ Já está como Aguardando"))
+                elif chave in tombados:
+                    log.append((cpf, contrato, "❌ Contrato já tombado"))
+                else:
+                    marcar_aguardando(cpf, contrato)
+                    log.append((cpf, contrato, "✅ Marcado como Lançado Sisbr"))
+
+            st.success(f"{sum(1 for _, _, status in log if '✅' in status)} marcações feitas com sucesso.")
+            df_log = pd.DataFrame(log, columns=["CPF", "Contrato", "Status"])
+            st.dataframe(df_log, use_container_width=True)
+
+            with io.BytesIO() as buffer:
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    df_log.to_excel(writer, index=False, sheet_name="Log Sisbr Lote")
+                buffer.seek(0)
+                st.download_button(
+                    label="📅 Baixar log em Excel",
+                    data=buffer,
+                    file_name="log_sisbr_lote.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
         except Exception as e:
