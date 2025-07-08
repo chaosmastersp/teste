@@ -225,12 +225,20 @@ def calculate_counts(filtered_df, tomb_df, active_cpfs, tombados_set, aguardando
 
 
     # Aguardando Conclusão count
+    #aguardando_df = pd.DataFrame(list(aguardando_set), columns=['Número CPF/CNPJ', 'Número Contrato Crédito'])
+    #merged_aguardando = aguardando_df.merge(
+        #df,
+        #on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
+        #how='inner'
+    #)
+
     aguardando_df = pd.DataFrame(list(aguardando_set), columns=['Número CPF/CNPJ', 'Número Contrato Crédito'])
     merged_aguardando = aguardando_df.merge(
-        df,
+        filtered_df,
         on=['Número CPF/CNPJ', 'Número Contrato Crédito'],
-        how='inner'
+        how='left'  # Usa left join para preservar todos os registros aguardando
     )
+
     num_aguardando = len(merged_aguardando)
 
     # Tombado count
