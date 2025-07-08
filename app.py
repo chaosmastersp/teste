@@ -574,12 +574,16 @@ if menu == "Marcação em Lote":
 
     arquivo_lote = st.file_uploader("Envie um arquivo .xlsx contendo os CPFs", type="xlsx")
 
-    if arquivo_lote:
+    if not arquivo_lote:
+        st.info("Envie um arquivo com uma coluna de CPFs para iniciar.")
+    else:
         try:
             df_lote = pd.read_excel(arquivo_lote)
             if df_lote.empty:
                 st.warning("O arquivo enviado está vazio.")
                 st.stop()
+
+            st.write("🧾 Colunas detectadas no arquivo:", df_lote.columns.tolist())
 
             col_cpf = None
             for col in df_lote.columns:
@@ -588,7 +592,7 @@ if menu == "Marcação em Lote":
                     break
 
             if not col_cpf:
-                st.error("Não foi encontrada nenhuma coluna contendo 'CPF' no nome.")
+                st.error("❌ Nenhuma coluna com nome contendo 'CPF' foi encontrada.")
                 st.stop()
 
             df_lote[col_cpf] = df_lote[col_cpf].astype(str).str.replace(r'\D', '', regex=True).str.zfill(11)
@@ -608,22 +612,24 @@ if menu == "Marcação em Lote":
                 marcar_cpf_ativo(cpf)
                 log.append((cpf, "✅ Marcado com sucesso"))
 
-            st.success(f"{sum(1 for _, status in log if '✅' in status)} CPFs marcados com sucesso.")
             df_log = pd.DataFrame(log, columns=["CPF", "Status"])
+            st.success(f"{sum(1 for _, status in log if '✅' in status)} CPFs marcados com sucesso.")
             st.dataframe(df_log, use_container_width=True)
 
             with io.BytesIO() as buffer:
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    df_log.to_excel(writer, index=False, sheet_name="Log Marçação Lote")
+                    df_log.to_excel(writer, index=False, sheet_name="Log Marcação Lote")
                 buffer.seek(0)
                 st.download_button(
-                    label="📅 Baixar log em Excel",
+                    label="📥 Baixar log em Excel",
                     data=buffer,
                     file_name="log_marcacao_lote.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+
         except Exception as e:
             st.error(f"Erro ao processar o arquivo: {e}")
+
 
 # Menu: Marcação Tombado em Lote
 if menu == "Marcação Tombado em Lote":
