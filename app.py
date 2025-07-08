@@ -265,8 +265,8 @@ menu_options = [
     f"Inconsistências ({num_inconsistencias})",
     "Imagens",
     "Marcação Consulta em Lote",  # Novo menu 1
-    "Marcação Tombado em Lote",  # Novo menu 2
     "Marcação Sisbr em Lote",  # Novo menu 3
+    "Marcação Tombado em Lote",  # Novo menu 2
     "Atualizar Bases"
 ]
 menu = st.sidebar.radio("Navegação", menu_options)
