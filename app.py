@@ -569,7 +569,7 @@ if "Imagens" in menu:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-if menu == "Marcação em Lote":
+if menu == "Marcação Consulta em Lote":
     st.title("📂 Marcação em Lote de Consulta Ativa")
 
     arquivo_lote = st.file_uploader("Envie um arquivo .xlsx contendo os CPFs", type="xlsx")
